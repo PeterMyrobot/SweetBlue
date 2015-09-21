@@ -76,15 +76,21 @@ if (JavaVersion.current().isJava8Compatible()) {
 // Generate javadocs
 task gendocs(type: Javadoc) {
     options.stylesheetFile = new File("./assets/doc_style.css")
+    String v = "${SEMVER}"
+    version = v.replace("_", '.')
+    title = "SweetBlue ${version} API"
     options.windowTitle = "SweetBlue"
     options.memberLevel = JavadocMemberLevel.PROTECTED
     options.author = true
-    options.linksOffline('http://d.android.com/reference', System.getenv("ANDROID_HOME") + '/docs/reference')
-    String v = "${SEMVER}"
-    version = v.replace("_", '.')
+    options.linksOffline('http://d.android.com/reference', System.getenv("ANDROID_HOME") + '/docs/reference')    
     destinationDir = new File("${BUNDLE_FOLDER}/docs/api")
     source = sourceSets.main.allJava
     classpath += configurations.compile
+    exclude "com/idevicesinc/sweetblue/backend"
+    exclude "com/idevicesinc/sweetblue/utils/Utils**.java"
+    exclude "com/idevicesinc/sweetblue/utils/UpdateLoop.java"
+    exclude "com/idevicesinc/sweetblue/utils/Pointer.java"
+
 }
 
 task copyJavaDoc(type: Copy, dependsOn: gendocs) {
