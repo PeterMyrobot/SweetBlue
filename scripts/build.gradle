@@ -90,6 +90,7 @@ task gendocs(type: Javadoc) {
     exclude "com/idevicesinc/sweetblue/utils/Utils**.java"
     exclude "com/idevicesinc/sweetblue/utils/UpdateLoop.java"
     exclude "com/idevicesinc/sweetblue/utils/Pointer.java"
+    exclude "com/idevicesinc/sweetblue/utils/HistoricalDataQuery.java"
 }
 
 task copyJavaDoc(type: Copy, dependsOn: gendocs) {
