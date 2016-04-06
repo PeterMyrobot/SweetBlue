@@ -48,7 +48,7 @@ class P_BondManager
 			{
 				if( state == PE_TaskState.SUCCEEDED || state == PE_TaskState.REDUNDANT )
 				{
-					this.onNativeBond(intent);
+					this.onNativeBond(intent, bondTask.isRequest());
 				}
 				else if( state == PE_TaskState.SOFTLY_CANCELLED )
 				{
@@ -72,7 +72,7 @@ class P_BondManager
 						status = Status.FAILED_EVENTUALLY;
 					}
 					
-					this.onNativeBondFailed(intent, status, failReason);
+					this.onNativeBondFailed(intent, status, failReason, bondTask.isRequest());
 				}
 			}
 		}
@@ -99,7 +99,7 @@ class P_BondManager
 		m_device.stateTracker_updateBoth(intent, BleStatuses.GATT_STATUS_NOT_APPLICABLE, BONDED, false, BONDING, true, UNBONDED, false);
 	}
 	
-	void onNativeBond(final E_Intent intent)
+	void onNativeBond(final E_Intent intent, boolean isRequest)
 	{
 		final boolean wasAlreadyBonded = m_device.is(BONDED);
 		
@@ -107,7 +107,7 @@ class P_BondManager
 		
 		if( !wasAlreadyBonded )
 		{
-			invokeCallback(Status.SUCCESS, BleStatuses.BOND_FAIL_REASON_NOT_APPLICABLE, intent.convert());
+			invokeCallback(Status.SUCCESS, BleStatuses.BOND_FAIL_REASON_NOT_APPLICABLE, intent.convert(), isRequest);
 		}
 	}
 	
@@ -145,7 +145,7 @@ class P_BondManager
 		return overrideBondingStates;
 	}
 	
-	void onNativeBondFailed(final E_Intent intent, final BondListener.Status status, final int failReason)
+	void onNativeBondFailed(final E_Intent intent, final BondListener.Status status, final int failReason, final boolean isRequest)
 	{ 
 		if( isNativelyBondingOrBonded() )
 		{
@@ -170,7 +170,7 @@ class P_BondManager
 			onNativeBondFailed_common(intent);
 		}
 		
-		invokeCallback(status, failReason, intent.convert());
+		invokeCallback(status, failReason, intent.convert(), isRequest);
 		
 		if( status == Status.TIMED_OUT )
 		{
@@ -239,9 +239,9 @@ class P_BondManager
 		return bond;
 	}
 	
-	BondEvent invokeCallback(Status status, int failReason, State.ChangeIntent intent)
+	BondEvent invokeCallback(Status status, int failReason, State.ChangeIntent intent, boolean isRequest)
 	{
-		final BondEvent event = new BondEvent(m_device, status, failReason, intent);
+		final BondEvent event = new BondEvent(m_device, status, failReason, intent, isRequest);
 		
 		invokeCallback(event);
 		

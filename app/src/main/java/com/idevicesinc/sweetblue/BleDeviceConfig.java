@@ -44,6 +44,11 @@ public class BleDeviceConfig extends BleNodeConfig implements Cloneable
 	public static final int DEFAULT_RUNNING_AVERAGE_N			= 10;
 
 	/**
+	 * Default value for {@link #requestBondRetryCount}.
+	 */
+	public static final int DEFAULT_REQUEST_BOND_RETRIES		= 3;
+
+	/**
 	 * This is a good default value for {@link #undiscoveryKeepAlive}. By default {@link #undiscoveryKeepAlive} is {@link Interval#DISABLED}.
 	 */
 	public static final double DEFAULT_SCAN_KEEP_ALIVE			= DEFAULT_MINIMUM_SCAN_TIME*2.5;
@@ -196,6 +201,13 @@ public class BleDeviceConfig extends BleNodeConfig implements Cloneable
 	 */
 	@Nullable(Prevalence.NORMAL)
 	public Boolean bondingFailFailsConnection					= true;
+
+	/**
+	 * Default is {@link #DEFAULT_REQUEST_BOND_RETRIES}. Specifies how many times SweetBlue should
+	 * retry bonding with a device. Sometimes multiple attempts are required to get the pairing
+	 * pin code dialog to show up. This only applies when you use {@link BleDevice#requestBond(BondListener)}.
+	 */
+	public Integer requestBondRetryCount						= DEFAULT_REQUEST_BOND_RETRIES;
 	
 	/**
 	 * Default is <code>false</code> - whether to use <code>BluetoothGatt.refresh()</code> right before service discovery.

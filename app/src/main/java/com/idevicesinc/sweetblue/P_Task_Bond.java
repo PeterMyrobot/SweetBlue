@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;
 
 import com.idevicesinc.sweetblue.compat.K_Util;
+import com.idevicesinc.sweetblue.utils.Interval;
 import com.idevicesinc.sweetblue.utils.Utils;
 import com.idevicesinc.sweetblue.utils.Utils_Reflection;
 
@@ -12,6 +13,7 @@ import java.lang.reflect.Method;
 class P_Task_Bond extends PA_Task_RequiresBleOn
 {
     private static final String METHOD_NAME__CREATE_BOND = "createBond";
+    private static final String METHOD_NAME__CANCEL_BOND_PROCESS	= "cancelBondProcess";
 
     //--- DRK > Originally used because for tab 4 (and any other bonding failure during connection) we'd force disconnect from the connection failing
     //---		and then put another bond task on the queue, but because we hadn't actually yet killed the transaction lock, the bond task would
@@ -25,23 +27,28 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
     private final PE_TaskPriority m_priority;
     private final boolean m_explicit;
     private final boolean m_partOfConnection;
+    private final boolean m_isRequest;
     private final E_TransactionLockBehavior m_lockBehavior;
+    private long m_lastBondAttempt;
+    private int m_currentBondAttempts;
 
     private int m_failReason = BleStatuses.BOND_FAIL_REASON_NOT_APPLICABLE;
 
-    public P_Task_Bond(BleDevice device, boolean explicit, boolean partOfConnection, I_StateListener listener, PE_TaskPriority priority, E_TransactionLockBehavior lockBehavior)
+    public P_Task_Bond(BleDevice device, boolean explicit, boolean partOfConnection, I_StateListener listener, PE_TaskPriority priority, E_TransactionLockBehavior lockBehavior, boolean isRequest)
     {
         super(device, listener);
 
+        m_currentBondAttempts = 0;
+        m_isRequest = isRequest;
         m_priority = priority == null ? PE_TaskPriority.FOR_EXPLICIT_BONDING_AND_CONNECTING : priority;
         m_explicit = explicit;
         m_partOfConnection = partOfConnection;
         m_lockBehavior = lockBehavior;
     }
 
-    public P_Task_Bond(BleDevice device, boolean explicit, boolean partOfConnection, I_StateListener listener, E_TransactionLockBehavior lockBehavior)
+    public P_Task_Bond(BleDevice device, boolean explicit, boolean partOfConnection, I_StateListener listener, E_TransactionLockBehavior lockBehavior, boolean isRequest)
     {
-        this(device, explicit, partOfConnection, listener, null, lockBehavior);
+        this(device, explicit, partOfConnection, listener, null, lockBehavior, isRequest);
     }
 
     @Override public boolean isExplicit()
@@ -66,20 +73,47 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
         {
             if (getDevice().m_nativeWrapper./*already*/isNativelyBonding())
             {
-                // nothing to do
+                // If the timeout period has been surpassed, then cancel the bond process, and we'll try
+                // to bond again, if we haven't surpassed the retry count
+                if (m_isRequest && System.currentTimeMillis() > (m_lastBondAttempt + getManager().m_config.requestBondTimeout.millis()))
+                {
+                    cancelBondProcess();
+                    // Re-arm the task, to get it to execute again
+                    arm();
+                }
             }
             else if (false == m_explicit)
             {
                 // DRK > Fail cause we're not natively bonding and this task was implicit, meaning we should be implicitly bonding.
                 fail();
             }
-            else if (false == createBond())
-            {
-                failImmediately();
+            else {
+                final boolean bondFailed = createBond();
 
-                getLogger().w("Bond failed immediately.");
+                m_lastBondAttempt = System.currentTimeMillis();
+
+                if (bondFailed)
+                {
+                    m_currentBondAttempts++;
+                    if (!m_isRequest || m_currentBondAttempts >= getManager().m_config.requestBondRetryCount)
+                    {
+                        failImmediately();
+
+                        getLogger().w("Bond failed immediately.");
+                    }
+                }
             }
         }
+    }
+
+    private boolean cancelBondProcess()
+    {
+        return Utils_Reflection.callBooleanReturnMethod(getDevice().getNative(), METHOD_NAME__CANCEL_BOND_PROCESS, getManager().m_config.loggingEnabled);
+    }
+
+    boolean isRequest()
+    {
+        return m_isRequest;
     }
 
     private boolean createBond()
@@ -154,7 +188,20 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
     {
         m_failReason = failReason;
 
-        fail();
+        m_currentBondAttempts++;
+
+        if (!m_isRequest || m_currentBondAttempts >= getManager().m_config.requestBondRetryCount)
+        {
+            fail();
+        }
+        else
+        {
+            getLogger().w(String.format("Bonding failed with fail code %d. Will retry bond...", m_failReason));
+
+            // Re-arm, so this task will try to execute again
+            arm();
+        }
+
     }
 
     public int getFailReason()
@@ -189,6 +236,30 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
 
     @Override protected BleTask getTaskType()
     {
-        return BleTask.BOND;
+        if (m_isRequest)
+        {
+            return BleTask.REQUEST_BOND;
+        }
+        else
+        {
+            return BleTask.BOND;
+        }
+    }
+
+    @Override boolean performTimeoutCheck()
+    {
+        if( !Interval.isDisabled(getTimeout()) && getTimeout() != Interval.INFINITE.secs() )
+        {
+            final double timeExecuting = (System.currentTimeMillis() - getresetableExecuteStartTime())/1000.0;
+
+            final double timeout = m_isRequest ? getTimeout() * getManager().m_config.requestBondRetryCount : getTimeout();
+
+            if( timeExecuting >= timeout )
+            {
+                timeout();
+                return true;
+            }
+        }
+        return false;
     }
 }

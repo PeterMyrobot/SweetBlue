@@ -96,6 +96,13 @@ public class BleNodeConfig
 	public Boolean disconnectIsCancellable									= true;
 
 	/**
+	 * Default is <code>Interval.secs(30.0)</code> - controls the task timeout when requesting a bond using
+	 * {@link BleDevice#requestBond(BleDevice.BondListener)}. The default task timeout is 12.5 seconds, and this
+	 * can be too short, when you're waiting for the user to enter a pin.
+	 */
+	public Interval requestBondTimeout										= Interval.secs(30);
+
+	/**
 	 * Default is an instance of {@link DefaultTaskTimeoutRequestFilter} - set an implementation here to
 	 * have fine control over how long individual {@link BleTask} instances can take before they
 	 * are considered "timed out" and failed.
@@ -105,7 +112,7 @@ public class BleNodeConfig
 	 */
 	@com.idevicesinc.sweetblue.annotations.Advanced
 	@Nullable(Nullable.Prevalence.RARE)
-	public TaskTimeoutRequestFilter taskTimeoutRequestFilter				= new DefaultTaskTimeoutRequestFilter();
+	public TaskTimeoutRequestFilter taskTimeoutRequestFilter				= new DefaultTaskTimeoutRequestFilter(requestBondTimeout);
 
 	/**
 	 * Default is an instance of {@link BleNodeConfig.DefaultHistoricalDataLogFilter} -
@@ -630,11 +637,24 @@ public class BleNodeConfig
 
 		private static final Please DEFAULT_RETURN_VALUE = Please.setTimeoutFor(Interval.secs(DEFAULT_TASK_TIMEOUT));
 
+		private final Please requestBondTimeout;
+
+
+		public DefaultTaskTimeoutRequestFilter(Interval bondTimeout)
+		{
+			requestBondTimeout = Please.setTimeoutFor(bondTimeout);
+		}
+
+
 		@Override public Please onEvent(TaskTimeoutRequestEvent e)
 		{
 			if( e.task() == BleTask.RESOLVE_CRASHES )
 			{
 				return Please.setTimeoutFor(Interval.secs(DEFAULT_CRASH_RESOLVER_TIMEOUT));
+			}
+			else if (e.task() == BleTask.REQUEST_BOND)
+			{
+				return requestBondTimeout;
 			}
 			else if( e.task() == BleTask.BOND )
 			{

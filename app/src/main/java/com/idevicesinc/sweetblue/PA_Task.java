@@ -23,7 +23,7 @@ abstract class PA_Task
 	
 	private double m_timeout;
 	private double m_executionDelay = 0.0;
-	
+
 	private long m_resetableExecuteStartTime = 0;
 //	private double m_totalTimeExecuting = 0.0;
 	private double m_totalTimeArmedAndExecuting = 0.0;
@@ -76,6 +76,11 @@ abstract class PA_Task
 		{
 			m_stateListener = listener;
 		}
+	}
+
+	long getresetableExecuteStartTime()
+	{
+		return m_resetableExecuteStartTime;
 	}
 	
 	protected abstract BleTask getTaskType();
@@ -331,6 +336,22 @@ abstract class PA_Task
 			}
 		}
 	}
+
+	boolean performTimeoutCheck()
+	{
+		if( !Interval.isDisabled(m_timeout) && m_timeout != Interval.INFINITE.secs() )
+		{
+			double timeExecuting = (System.currentTimeMillis() - m_resetableExecuteStartTime)/1000.0;
+
+			if( timeExecuting >= m_timeout )
+			{
+				timeout();
+
+				return true;
+			}
+		}
+		return false;
+	}
 	
 	void update_internal(double timeStep)
 	{
@@ -345,16 +366,9 @@ abstract class PA_Task
 			}
 			else if( m_state == PE_TaskState.EXECUTING )
 			{
-				if( !Interval.isDisabled(m_timeout) && m_timeout != Interval.INFINITE.secs() )
+				if (performTimeoutCheck())
 				{
-					double timeExecuting = (System.currentTimeMillis() - m_resetableExecuteStartTime)/1000.0;
-
-					if( timeExecuting >= m_timeout )
-					{
-						timeout();
-
-						return;
-					}
+					return;
 				}
 			}
 		}

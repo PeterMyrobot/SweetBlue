@@ -624,7 +624,7 @@ class P_BleDevice_Listeners extends BluetoothGattCallback
 			{
 				if( previousState == BluetoothDevice.BOND_BONDING || previousState == BluetoothDevice.BOND_NONE )
 				{
-					m_device.m_bondMngr.onNativeBondFailed(E_Intent.UNINTENTIONAL, Status.FAILED_EVENTUALLY, failReason);
+					m_device.m_bondMngr.onNativeBondFailed(E_Intent.UNINTENTIONAL, Status.FAILED_EVENTUALLY, failReason, false);
 				}
 				else
 				{
@@ -641,7 +641,7 @@ class P_BleDevice_Listeners extends BluetoothGattCallback
 
 			if ( !isCurrent )
 			{
-				m_queue.add(new P_Task_Bond(m_device, /*explicit=*/false, /*partOfConnection=*/false, m_taskStateListener, PE_TaskPriority.FOR_IMPLICIT_BONDING_AND_CONNECTING, E_TransactionLockBehavior.PASSES));
+				m_queue.add(new P_Task_Bond(m_device, /*explicit=*/false, /*partOfConnection=*/false, m_taskStateListener, PE_TaskPriority.FOR_IMPLICIT_BONDING_AND_CONNECTING, E_TransactionLockBehavior.PASSES, false));
 			}
 
 			m_queue.fail(P_Task_Unbond.class, m_device);
@@ -652,7 +652,7 @@ class P_BleDevice_Listeners extends BluetoothGattCallback
 
 			if( false == m_queue.succeed(P_Task_Bond.class, m_device) )
 			{
-				m_device.m_bondMngr.onNativeBond(E_Intent.UNINTENTIONAL);
+				m_device.m_bondMngr.onNativeBond(E_Intent.UNINTENTIONAL, false);
 			}
 		}
 	}
