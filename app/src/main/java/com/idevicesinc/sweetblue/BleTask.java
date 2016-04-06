@@ -38,6 +38,9 @@ public enum BleTask
 	 */
 	DISCONNECT,
 
+	/**
+	 * Associated with {@link BleDevice#requestBond(BleDevice.BondListener)} and {@link BleDeviceState#BONDING}.
+	 */
 	REQUEST_BOND,
 
 	/**
