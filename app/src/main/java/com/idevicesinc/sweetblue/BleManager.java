@@ -79,6 +79,10 @@ import com.idevicesinc.sweetblue.utils.Utils_String;
  * is also strongly recommended but optional. Without it, {@link BleManager#startScan()} and overloads will not properly return results in {@link android.os.Build.VERSION_CODES#M} and above.
  * See {@link #startScan(Interval, BleManagerConfig.ScanFilter, DiscoveryListener)} for more information.
  * <br><br>
+ * If you wish to only require the location permissions for API 23+, then you can use the following:
+ * <br><br>
+ * {@code <uses-permission-sdk-23 android:name="android.permission.ACCESS_COARSE_LOCATION" /> } <br>>
+ * <br><br>
  * Now here is a simple example usage:<pre><code>
  * public class MyActivity extends Activity
  * {

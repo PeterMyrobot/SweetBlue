@@ -78,6 +78,8 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
                 if (m_isRequest && System.currentTimeMillis() > (m_lastBondAttempt + getManager().m_config.requestBondTimeout.millis()))
                 {
                     cancelBondProcess();
+                    // TODO - Test this. Canceling the bond process may end up throwing a broadcast, which
+                    // our receiver would catch. If so, we don't need to arm here.
                     // Re-arm the task, to get it to execute again
                     arm();
                 }
