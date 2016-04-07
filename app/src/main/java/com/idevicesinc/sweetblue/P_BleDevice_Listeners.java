@@ -618,6 +618,16 @@ class P_BleDevice_Listeners extends BluetoothGattCallback
 			
 			if( bondTask != null )
 			{
+				if (previousState == BluetoothDevice.BOND_BONDING && failReason == BleStatuses.UNBOND_REASON_REMOTE_DEVICE_DOWN)
+				{
+					int i = 0;
+					i++;
+					m_logger.e("Previous State was BONDING, and now it's BOND_NONE. Possible user cancellation.");
+				}
+				else
+				{
+					m_logger.e(String.format("Previous state=%d , new state=%d , failReason=%d", previousState, newState, failReason));
+				}
 				bondTask.onNativeFail(failReason);
 			}
 			else if (!m_queue.succeed(P_Task_Unbond.class, m_device))

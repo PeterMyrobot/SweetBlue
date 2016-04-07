@@ -90,11 +90,11 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
                 fail();
             }
             else {
-                final boolean bondFailed = createBond();
+                final boolean bondFailedImmediately = !createBond();
 
                 m_lastBondAttempt = System.currentTimeMillis();
 
-                if (bondFailed)
+                if (bondFailedImmediately)
                 {
                     m_currentBondAttempts++;
                     if (!m_isRequest || m_currentBondAttempts >= getManager().m_config.requestBondRetryCount)
