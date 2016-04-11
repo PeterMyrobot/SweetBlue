@@ -96,11 +96,15 @@ public class BleNodeConfig
 	public Boolean disconnectIsCancellable									= true;
 
 	/**
-	 * Default is <code>Interval.secs(30.0)</code> - controls the task timeout when requesting a bond using
+	 * Default is <code>Interval.secs(35.0)</code> - controls the task timeout when requesting a bond using
 	 * {@link BleDevice#requestBond(BleDevice.BondListener)}. The default task timeout is 12.5 seconds, and this
 	 * can be too short, when you're waiting for the user to enter a pin.
+	 * <br><br>
+	 * NOTE: Android has a default timeout for the pairing dialog, usually 30 seconds. This only affects the timeout
+	 * of the Bonding task within SweetBlue (however, it will close the dialog if you set a shorter timeout than what
+	 * Android has set).
 	 */
-	public Interval requestBondTimeout										= Interval.secs(30);
+	public Interval requestBondTimeout										= Interval.secs(35);
 
 	/**
 	 * Default is an instance of {@link DefaultTaskTimeoutRequestFilter} - set an implementation here to
@@ -112,7 +116,7 @@ public class BleNodeConfig
 	 */
 	@com.idevicesinc.sweetblue.annotations.Advanced
 	@Nullable(Nullable.Prevalence.RARE)
-	public TaskTimeoutRequestFilter taskTimeoutRequestFilter				= new DefaultTaskTimeoutRequestFilter(requestBondTimeout);
+	public TaskTimeoutRequestFilter taskTimeoutRequestFilter				= new DefaultTaskTimeoutRequestFilter();
 
 	/**
 	 * Default is an instance of {@link BleNodeConfig.DefaultHistoricalDataLogFilter} -
@@ -637,12 +641,9 @@ public class BleNodeConfig
 
 		private static final Please DEFAULT_RETURN_VALUE = Please.setTimeoutFor(Interval.secs(DEFAULT_TASK_TIMEOUT));
 
-		private final Please requestBondTimeout;
 
-
-		public DefaultTaskTimeoutRequestFilter(Interval bondTimeout)
+		public DefaultTaskTimeoutRequestFilter()
 		{
-			requestBondTimeout = Please.setTimeoutFor(bondTimeout);
 		}
 
 
@@ -654,7 +655,7 @@ public class BleNodeConfig
 			}
 			else if (e.task() == BleTask.REQUEST_BOND)
 			{
-				return requestBondTimeout;
+				return Please.setTimeoutFor(BleManager.s_instance.m_config.requestBondTimeout);
 			}
 			else if( e.task() == BleTask.BOND )
 			{

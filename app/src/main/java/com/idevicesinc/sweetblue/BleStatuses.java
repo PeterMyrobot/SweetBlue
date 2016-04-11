@@ -37,6 +37,12 @@ public class BleStatuses
 	 */
 	public static final int BOND_FAIL_REASON_NOT_AVAILABLE						= 42;
 
+	/**
+	 * Thrown when requesting a bond using {@link BleDevice#requestBond(BleDevice.BondListener)}, and
+	 * either the user pressed cancel, or Android's pairing timeout has been reached.
+	 */
+	public static final int BOND_FAIL_REASON_CANCEL_OR_TIMEOUT = 10;
+
 
 	/**
 	 * Status code used for {@link BleServer.AdvertisingListener.AdvertisingEvent#status()} when advertising has been
@@ -95,7 +101,10 @@ public class BleStatuses
      */
     public static final int UNBOND_REASON_REMOTE_AUTH_CANCELED = 8;
 
-
+	/**
+	 * An existing bond was explicitly revoked
+	 */
+	public static final int UNBOND_REASON_REMOVED = 9;
 
 
 	/**

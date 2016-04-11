@@ -8,12 +8,11 @@ import com.idevicesinc.sweetblue.utils.Interval;
 import com.idevicesinc.sweetblue.utils.Utils;
 import com.idevicesinc.sweetblue.utils.Utils_Reflection;
 
-import java.lang.reflect.Method;
-
 class P_Task_Bond extends PA_Task_RequiresBleOn
 {
     private static final String METHOD_NAME__CREATE_BOND = "createBond";
     private static final String METHOD_NAME__CANCEL_BOND_PROCESS	= "cancelBondProcess";
+
 
     //--- DRK > Originally used because for tab 4 (and any other bonding failure during connection) we'd force disconnect from the connection failing
     //---		and then put another bond task on the queue, but because we hadn't actually yet killed the transaction lock, the bond task would
@@ -31,7 +30,7 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
     private final E_TransactionLockBehavior m_lockBehavior;
     private long m_lastBondAttempt;
     private int m_currentBondAttempts;
-
+    private boolean m_startedBond;
     private int m_failReason = BleStatuses.BOND_FAIL_REASON_NOT_APPLICABLE;
 
     public P_Task_Bond(BleDevice device, boolean explicit, boolean partOfConnection, I_StateListener listener, PE_TaskPriority priority, E_TransactionLockBehavior lockBehavior, boolean isRequest)
@@ -81,7 +80,7 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
                     // TODO - Test this. Canceling the bond process may end up throwing a broadcast, which
                     // our receiver would catch. If so, we don't need to arm here.
                     // Re-arm the task, to get it to execute again
-                    arm();
+                    //arm();
                 }
             }
             else if (false == m_explicit)
@@ -186,7 +185,7 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
         return super.isMoreImportantThan(task);
     }
 
-    public void onNativeFail(int failReason)
+    public void onNativeFail(int failReason, boolean shouldRetry)
     {
         m_failReason = failReason;
 
@@ -196,14 +195,17 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
         {
             fail();
         }
-        else
+        else if (shouldRetry)
         {
             getLogger().w(String.format("Bonding failed with fail code %d. Will retry bond...", m_failReason));
 
             // Re-arm, so this task will try to execute again
             arm();
         }
-
+        else
+        {
+            m_failReason = BleStatuses.BOND_FAIL_REASON_CANCEL_OR_TIMEOUT;
+        }
     }
 
     public int getFailReason()
@@ -252,9 +254,10 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
     {
         if( !Interval.isDisabled(getTimeout()) && getTimeout() != Interval.INFINITE.secs() )
         {
-            final double timeExecuting = (System.currentTimeMillis() - getresetableExecuteStartTime())/1000.0;
+            final double timeExecuting = (System.currentTimeMillis() - getResetableExecuteStartTime())/1000.0;
 
-            final double timeout = m_isRequest ? getTimeout() * getManager().m_config.requestBondRetryCount : getTimeout();
+            final int attempts = m_currentBondAttempts == 0 ? 1 : m_currentBondAttempts;
+            final double timeout = m_isRequest ? getTimeout() * attempts : getTimeout();
 
             if( timeExecuting >= timeout )
             {

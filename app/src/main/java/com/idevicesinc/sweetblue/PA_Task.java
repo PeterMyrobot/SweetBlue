@@ -78,7 +78,7 @@ abstract class PA_Task
 		}
 	}
 
-	long getresetableExecuteStartTime()
+	long getResetableExecuteStartTime()
 	{
 		return m_resetableExecuteStartTime;
 	}

@@ -604,31 +604,37 @@ class P_BleDevice_Listeners extends BluetoothGattCallback
 
 	public void onNativeBondStateChanged_mainThread(int previousState, int newState, int failReason)
 	{
+		final P_Task_Bond bondTask = m_queue.getCurrent(P_Task_Bond.class, m_device);
 		if (newState == BluetoothDevice.ERROR)
 		{
-			P_TaskQueue queue = m_device.getTaskQueue();
-			queue.fail(P_Task_Bond.class, m_device);
-			queue.fail(P_Task_Unbond.class, m_device);
-			
-			m_logger.e("newState for bond is BluetoothDevice.ERROR!(?)");
+			if (bondTask != null)
+			{
+				bondTask.onNativeFail(failReason, true);
+			}
+			else
+			{
+				P_TaskQueue queue = m_device.getTaskQueue();
+				queue.fail(P_Task_Bond.class, m_device);
+				queue.fail(P_Task_Unbond.class, m_device);
+
+				m_logger.e("newState for bond is BluetoothDevice.ERROR!(?)");
+			}
 		}
 		else if (newState == BluetoothDevice.BOND_NONE)
 		{
-			final P_Task_Bond bondTask = m_queue.getCurrent(P_Task_Bond.class, m_device);
-			
 			if( bondTask != null )
 			{
-				if (previousState == BluetoothDevice.BOND_BONDING && failReason == BleStatuses.UNBOND_REASON_REMOTE_DEVICE_DOWN)
+				if (previousState == BluetoothDevice.BOND_BONDING)
 				{
 					int i = 0;
 					i++;
 					m_logger.e("Previous State was BONDING, and now it's BOND_NONE. Possible user cancellation.");
 				}
-				else
-				{
-					m_logger.e(String.format("Previous state=%d , new state=%d , failReason=%d", previousState, newState, failReason));
-				}
-				bondTask.onNativeFail(failReason);
+//				else
+//				{
+//					m_logger.e(String.format("Previous state=%d , new state=%d , failReason=%d", previousState, newState, failReason));
+//				}
+				bondTask.onNativeFail(failReason, false);
 			}
 			else if (!m_queue.succeed(P_Task_Unbond.class, m_device))
 			{
