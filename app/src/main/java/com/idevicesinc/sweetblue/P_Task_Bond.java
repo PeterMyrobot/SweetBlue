@@ -205,6 +205,7 @@ class P_Task_Bond extends PA_Task_RequiresBleOn
         else
         {
             m_failReason = BleStatuses.BOND_FAIL_REASON_CANCEL_OR_TIMEOUT;
+            fail();
         }
     }
 
