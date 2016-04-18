@@ -194,6 +194,12 @@ public class BleManagerConfig extends BleDeviceConfig
 	 * automatically by using {@link android.app.Application.ActivityLifecycleCallbacks}.
 	 */
 	public boolean autoPauseResumeDetection				= true;
+
+	/**
+	 * Default is <code>Interval.secs(60.0)</code> - Controls how often SweetBlue explicitly calls the garbage collector. If you don't want
+	 * SweetBlue to do this, then set this to <code>null</code>.
+	 */
+	public Interval autoGcInterval						= Interval.secs(60.0);
 	
 	/**
 	 * Default is {@value #DEFAULT_UH_OH_CALLBACK_THROTTLE} seconds - {@link BleManager.UhOhListener.UhOh} callbacks from {@link BleManager.UhOhListener}

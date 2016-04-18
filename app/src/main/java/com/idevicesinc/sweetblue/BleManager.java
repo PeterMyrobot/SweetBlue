@@ -819,6 +819,7 @@ public class BleManager
 //		}
 	}
 
+	private final static int GC_INTERVAL_SECONDS = 30;
 	private final Context m_context;
 	final Handler m_mainThreadHandler;
 	private final BluetoothManager m_btMngr;
@@ -855,6 +856,7 @@ public class BleManager
 	private boolean m_isForegrounded = false;
 	private boolean m_triedToStartScanAfterResume = false;
 	private boolean m_ready = false;
+	private double m_lastGC;
 
     BleServer.StateListener m_defaultServerStateListener;
 	BleServer.OutgoingListener m_defaultServerOutgoingListener;
@@ -3231,6 +3233,8 @@ public class BleManager
 	{
 		enforceMainThread();
 
+		//long curTime = System.currentTimeMillis();
+
 		m_listeners.update();
 
 		m_uhOhThrottler.update(timeStep_seconds);
@@ -3317,6 +3321,20 @@ public class BleManager
 		{
 			m_config.updateLoopCallback.onUpdate(timeStep_seconds);
 		}
+
+
+		if (m_config.autoGcInterval != null)
+		{
+			if (m_lastGC >= m_config.autoGcInterval.secs())
+			{
+				m_lastGC = 0;
+				Runtime.getRuntime().gc();
+			}
+			else
+			{
+				m_lastGC += timeStep_seconds;
+			}
+		}
 	}
 
 	/**
@@ -3328,6 +3346,15 @@ public class BleManager
 		enforceMainThread();
 
 		return m_isForegrounded;
+	}
+
+	public void shutdown()
+	{
+		if (isAny(BleManagerState.STARTING_SCAN, BleManagerState.SCANNING))
+		{
+			stopAllScanning();
+		}
+		stopAutoUpdate();
 	}
 
 	private boolean doAutoScan()
