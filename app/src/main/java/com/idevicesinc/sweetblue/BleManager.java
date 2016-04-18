@@ -2421,7 +2421,7 @@ public class BleManager
 			device = getDevice(d.getAddress());
 			if (device.isNull())
 			{
-				device = newDevice(d.getAddress());
+				device = newDevice_private(d, Utils_String.normalizeDeviceName(d.getName()), d.getName(), BleDeviceOrigin.EXPLICIT, new BleDeviceConfig());
 			}
 			bonded_devices.add(device);
 		}
