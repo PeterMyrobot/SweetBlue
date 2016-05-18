@@ -125,6 +125,10 @@ class P_BleManager_Listeners
 			{
 				onClassicDiscoveryFinished();
 			}
+			else if ( action.equals(BluetoothDevice.ACTION_ACL_DISCONNECTED) )
+			{
+				onNativeDisconnect(intent);
+			}
 			
 			//--- DRK > This block doesn't do anything...just wrote it to see how these other events work and if they're useful.
 			//---		They don't seem to be but leaving it here for the future if needed anyway.
@@ -154,6 +158,23 @@ class P_BleManager_Listeners
 			}
 		}
 	};
+
+	private void onNativeDisconnect(Intent intent)
+	{
+		BluetoothDevice native_device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+		if (native_device != null)
+		{
+			BleDevice device = m_mngr.getDevice(native_device.getAddress());
+			if (!device.isNull())
+			{
+				P_Task_Disconnect discTask = m_mngr.getTaskQueue().getCurrent(P_Task_Disconnect.class, device);
+				if (discTask == null && device.is(BleDeviceState.CONNECTED) && !device.isAny(BleDeviceState.RECONNECTING_SHORT_TERM, BleDeviceState.RECONNECTING_LONG_TERM))
+				{
+					device.onNativeDisconnect(false, BleStatuses.GATT_STATUS_NOT_APPLICABLE, false, true);
+				}
+			}
+		}
+	}
 	
 	private final BleManager m_mngr;
 
