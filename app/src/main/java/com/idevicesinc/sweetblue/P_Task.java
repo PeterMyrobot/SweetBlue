@@ -1,7 +1,6 @@
 package com.idevicesinc.sweetblue;
 
 
-import com.idevicesinc.sweetblue.listeners.ManagerStateListener;
 import com.idevicesinc.sweetblue.utils.BleStatuses;
 import com.idevicesinc.sweetblue.utils.Interval;
 import com.idevicesinc.sweetblue.utils.Utils_String;
@@ -122,6 +121,11 @@ abstract class P_Task
     long timeExecuting()
     {
         return mTimeExecuting;
+    }
+
+    long totalTime()
+    {
+        return System.currentTimeMillis() - mTimeCreated;
     }
 
     boolean requeued()
@@ -277,6 +281,11 @@ abstract class P_Task
     void onTaskTimedOut()
     {
         setState(P_TaskState.TIMED_OUT);
+    }
+
+    P_TaskState getState()
+    {
+        return mState;
     }
 
     void checkTimeOut(long curTimeMs)

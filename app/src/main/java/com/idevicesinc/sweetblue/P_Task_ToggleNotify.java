@@ -14,18 +14,18 @@ public final class P_Task_ToggleNotify extends P_Task_Transactionable
     private boolean mEnable;
 
 
-    public P_Task_ToggleNotify(BleDevice device, IStateListener listener, UUID serviceUuid, UUID charUuid, boolean enable, ReadWriteListener successListener)
+    public P_Task_ToggleNotify(BleDevice device, IStateListener listener, UUID serviceUuid, UUID charUuid, boolean enable, BleTransaction txn, ReadWriteListener successListener)
     {
-        super(device, listener);
+        super(device, listener, txn);
         mServiceUuid = serviceUuid;
         mCharUuid = charUuid;
         mListener = successListener;
         mEnable = enable;
     }
 
-    public P_Task_ToggleNotify(BleDevice device, IStateListener listener, UUID charUuid, boolean enable, ReadWriteListener successListener)
+    public P_Task_ToggleNotify(BleDevice device, IStateListener listener, UUID charUuid, boolean enable, BleTransaction txn, ReadWriteListener successListener)
     {
-        this(device, listener, null, charUuid, enable, successListener);
+        this(device, listener, null, charUuid, enable, txn, successListener);
     }
 
     @Override public final void execute()

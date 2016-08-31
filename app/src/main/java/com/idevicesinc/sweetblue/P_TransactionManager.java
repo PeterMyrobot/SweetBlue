@@ -13,6 +13,8 @@ final class P_TransactionManager
     private ArrayList<P_Task> queueTasks;
     private BleTransaction.Auth authTxn;
     private BleTransaction.Init initTxn;
+    private BleTransaction.Ota otaTxn;
+    private BleTransaction anonTxn;
     private BleTransaction mCurrent;
     private EndListener mEndListener = new EndListener();
 
@@ -21,19 +23,6 @@ final class P_TransactionManager
     {
         mDevice = device;
         queueTasks = new ArrayList<>(0);
-    }
-
-    public final boolean isTransactionOperation()
-    {
-        StackTraceElement[] elements = new Exception().getStackTrace();
-        for (StackTraceElement e : elements)
-        {
-            if (e.getClassName().equals(BleTransaction.class.getName()) || e.getClassName().equals(P_TransactionManager.class.getName()))
-            {
-                return true;
-            }
-        }
-        return false;
     }
 
     public final void setAuthTxn(BleTransaction.Auth auth)
@@ -46,6 +35,16 @@ final class P_TransactionManager
         initTxn = init;
     }
 
+    public final void setOtaTxn(BleTransaction.Ota ota)
+    {
+        otaTxn = ota;
+    }
+
+    public final void setAnonTxn(BleTransaction anonTxn)
+    {
+        this.anonTxn = anonTxn;
+    }
+
     public final BleTransaction.Auth getAuthTxn()
     {
         return authTxn;
@@ -54,6 +53,16 @@ final class P_TransactionManager
     public final BleTransaction.Init getInitTxn()
     {
         return initTxn;
+    }
+
+    public final BleTransaction.Ota getOtaTxn()
+    {
+        return otaTxn;
+    }
+
+    public final BleTransaction getAnonTxn()
+    {
+        return anonTxn;
     }
 
     public final boolean isRunning()
@@ -83,10 +92,6 @@ final class P_TransactionManager
 
     public final void cancelAllTxns()
     {
-        if (mCurrent != null && mCurrent.isRunning())
-        {
-            mCurrent.cancel();
-        }
         if (authTxn != null && authTxn.isRunning())
         {
             authTxn.cancel();
@@ -94,6 +99,21 @@ final class P_TransactionManager
         if (initTxn != null && initTxn.isRunning())
         {
             initTxn.cancel();
+        }
+        if (otaTxn != null && otaTxn.isRunning())
+        {
+            otaTxn.cancel();
+        }
+        if (anonTxn != null && anonTxn.isRunning())
+        {
+            anonTxn.cancel();
+        }
+
+        if (mCurrent != null && mCurrent.isRunning())
+        {
+            mDevice.getManager().getLogger().e("Expected current transaction to be null!");
+            mCurrent.cancel();
+            mCurrent = null;
         }
     }
 
@@ -116,6 +136,8 @@ final class P_TransactionManager
 
         @Override public final void onTxnEnded(BleTransaction txn, EndReason endReason)
         {
+            mCurrent = null;
+
             if (txn == authTxn)
             {
                 if (endReason == EndReason.SUCCEEDED)
@@ -124,11 +146,12 @@ final class P_TransactionManager
                             BleDeviceState.AUTHENTICATING, false);
                     if (initTxn != null)
                     {
-                        mDevice.onInitialized();
+                        mDevice.onAuthenticated();
                         start(initTxn);
                     }
                     else
                     {
+                        mDevice.onAuthenticated();
                         mDevice.onInitialized();
                         addQueuedTasks();
                     }
@@ -142,6 +165,7 @@ final class P_TransactionManager
             {
                 if (endReason == EndReason.SUCCEEDED)
                 {
+                    mDevice.onAuthenticated();
                     mDevice.onInitialized();
                     addQueuedTasks();
                 }

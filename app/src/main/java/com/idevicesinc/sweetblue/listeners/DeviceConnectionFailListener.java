@@ -24,7 +24,7 @@ public interface DeviceConnectionFailListener extends P_BaseConnectionFailListen
     /**
      * The reason for the connection failure.
      */
-    public static enum Status implements UsesCustomNull
+    enum Status implements UsesCustomNull
     {
         /**
          * Used in place of Java's built-in <code>null</code> wherever needed. As of now, the {@link ConnectionFailEvent#status()} given
@@ -157,7 +157,7 @@ public interface DeviceConnectionFailListener extends P_BaseConnectionFailListen
      * {@link Status#BONDING_FAILED}, gives further timing information on when the failure took place.
      * For all other reasons, {@link ConnectionFailEvent#timing()} will be {@link #NOT_APPLICABLE}.
      */
-    public static enum Timing
+    enum Timing
     {
         /**
          * For reasons like {@link DeviceConnectionFailListener.Status#BLE_TURNING_OFF}, {@link DeviceConnectionFailListener.Status#AUTHENTICATION_FAILED}, etc.
@@ -188,7 +188,7 @@ public interface DeviceConnectionFailListener extends P_BaseConnectionFailListen
      * Structure passed to {@link DeviceConnectionFailListener#onEvent(ConnectionFailEvent)} to provide more info about how/why the connection failed.
      */
     @Immutable
-    public static class ConnectionFailEvent extends P_BaseConnectionFailListener.ConnectionFailEvent implements UsesCustomNull
+    class ConnectionFailEvent extends P_BaseConnectionFailListener.ConnectionFailEvent implements UsesCustomNull
     {
         /**
          * The {@link BleDevice} this {@link ConnectionFailEvent} is for.
@@ -293,12 +293,12 @@ public interface DeviceConnectionFailListener extends P_BaseConnectionFailListen
             return s_emptyHistory;
         }
 
-        static ConnectionFailEvent NULL(BleDevice device)
+        public static ConnectionFailEvent NULL(BleDevice device)
         {
             return new ConnectionFailEvent(device, Status.NULL, Timing.NOT_APPLICABLE, 0, Interval.DISABLED, Interval.DISABLED, BleStatuses.GATT_STATUS_NOT_APPLICABLE, BleDeviceState.NULL, BleDeviceState.NULL, AutoConnectUsage.NOT_APPLICABLE, BleStatuses.BOND_FAIL_REASON_NOT_APPLICABLE, device.NULL_READWRITE_EVENT(), null);
         }
 
-        static ConnectionFailEvent EARLY_OUT(BleDevice device, Status reason)
+        public static ConnectionFailEvent EARLY_OUT(BleDevice device, Status reason)
         {
             return new DeviceConnectionFailListener.ConnectionFailEvent(device, reason, Timing.TIMED_OUT, 0, Interval.ZERO, Interval.ZERO, BleStatuses.GATT_STATUS_NOT_APPLICABLE, BleDeviceState.NULL, BleDeviceState.NULL, AutoConnectUsage.NOT_APPLICABLE, BleStatuses.BOND_FAIL_REASON_NOT_APPLICABLE, device.NULL_READWRITE_EVENT(), null);
         }

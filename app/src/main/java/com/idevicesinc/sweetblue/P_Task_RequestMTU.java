@@ -14,9 +14,9 @@ final class P_Task_RequestMtu extends P_Task_Transactionable
     private final ReadWriteListener mListener;
 
 
-    public P_Task_RequestMtu(BleDevice device, IStateListener listener, int mtuSize, ReadWriteListener rwlistener)
+    public P_Task_RequestMtu(BleDevice device, IStateListener listener, int mtuSize, BleTransaction txn, ReadWriteListener rwlistener)
     {
-        super(device, listener);
+        super(device, listener, txn);
         mMtuSize = mtuSize;
         mListener = rwlistener;
     }
@@ -44,20 +44,21 @@ final class P_Task_RequestMtu extends P_Task_Transactionable
         }
     }
 
-    final void onMtuChangeResult(ReadWriteListener.ReadWriteEvent event)
+    final void onMtuSuccess(int newMtu)
     {
-        if (event.wasSuccess())
-        {
-            succeed();
-        }
-        else
-        {
-            fail();
-        }
-        if (mListener != null)
-        {
-            mListener.onEvent(event);
-        }
+        ReadWriteListener.ReadWriteEvent event = newEvent(ReadWriteListener.Status.SUCCESS, BleStatuses.GATT_STATUS_NOT_APPLICABLE, newMtu);
+        getDevice().postReadWriteEvent(mListener, event);
+    }
+
+    final void onMtuFailed(int gattStatus)
+    {
+        ReadWriteListener.ReadWriteEvent event = newEvent(ReadWriteListener.Status.FAILED_TO_SET_VALUE_ON_TARGET, gattStatus, mMtuSize);
+        getDevice().postReadWriteEvent(mListener, event);
+    }
+
+    private ReadWriteListener.ReadWriteEvent newEvent(ReadWriteListener.Status status, int gattStatus, int mtu)
+    {
+        return P_EventFactory.newReadWriteEvent(getDevice(), mtu, status, gattStatus, totalTime(), timeExecuting(), true);
     }
 
     @Override final P_TaskPriority defaultPriority()

@@ -3,12 +3,11 @@ package com.idevicesinc.sweetblue;
 
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
-import android.content.Intent;
-import android.os.Build;
 
 import com.idevicesinc.sweetblue.annotations.Nullable;
 import com.idevicesinc.sweetblue.listeners.BondListener;
 import com.idevicesinc.sweetblue.listeners.DeviceConnectionFailListener;
+import com.idevicesinc.sweetblue.listeners.DeviceConnectionFailListener.ConnectionFailEvent;
 import com.idevicesinc.sweetblue.listeners.DeviceConnectionFailListener.Status;
 import com.idevicesinc.sweetblue.listeners.DeviceConnectionFailListener.Timing;
 import com.idevicesinc.sweetblue.listeners.DeviceStateListener;
@@ -20,11 +19,12 @@ import com.idevicesinc.sweetblue.listeners.ReadWriteListener;
 import com.idevicesinc.sweetblue.listeners.ReadWriteListener.ReadWriteEvent;
 import com.idevicesinc.sweetblue.utils.BleScanInfo;
 import com.idevicesinc.sweetblue.utils.BleStatuses;
-import com.idevicesinc.sweetblue.utils.Interval;
 import com.idevicesinc.sweetblue.utils.Percent;
+import com.idevicesinc.sweetblue.utils.State;
 import com.idevicesinc.sweetblue.utils.Utils;
 import com.idevicesinc.sweetblue.utils.Utils_Rssi;
 import com.idevicesinc.sweetblue.utils.Utils_String;
+import com.idevicesinc.sweetblue.utils.Uuids;
 
 import java.util.Map;
 import java.util.UUID;
@@ -50,10 +50,11 @@ public class BleDevice extends BleNode
     private BleConnectionPriority mConnectionPriority = BleConnectionPriority.MEDIUM;
     private int mMtu = BleDeviceConfig.DEFAULT_MTU_SIZE;
     private ReadWriteEvent mNullReadWriteEvent;
+    private BondListener.BondEvent mNullBondEvent;
     private BleScanInfo mScanInfo;
     private String mName_native;
     private String mName_scanRecord;
-    String mName_device;
+    private String mName_device;
     private String mName_debug;
     //private DeviceConnectionFailListener mConnectionFailListener;
     final P_GattManager mGattManager;
@@ -63,6 +64,9 @@ public class BleDevice extends BleNode
     final P_TransactionManager mTxnManager;
     private long mLastDiscovery;
     private P_ConnectionFailManager mConnectionFailMgr;
+    private DeviceConnectionFailListener.ConnectionFailEvent mNullConnectionFailEvent;
+    private P_DeviceServiceManager mServiceMgr;
+    P_BondManager mBondMgr;
 
 
     BleDevice(BleManager mgr, BluetoothDevice nativeDevice, BleDeviceOrigin origin, BleDeviceConfig config_nullable, String deviceName, boolean isNull)
@@ -91,6 +95,8 @@ public class BleDevice extends BleNode
             mName_debug = mName_device;
         }
 
+        mServiceMgr = getServiceManager();
+
         if (!mIsNull)
         {
             mStateTracker = new P_DeviceStateTracker(this, false);
@@ -101,6 +107,7 @@ public class BleDevice extends BleNode
             mReconnectManager = new P_ReconnectManager(this);
             mReconnectManager.setMaxReconnectTries(getConfig().reconnectionTries);
             mTxnManager = new P_TransactionManager(this);
+            mBondMgr = new P_BondManager(this);
         }
         else
         {
@@ -111,6 +118,7 @@ public class BleDevice extends BleNode
             stateTracker().set(P_StateTracker.E_Intent.UNINTENTIONAL, BleStatuses.GATT_STATUS_NOT_APPLICABLE, BleDeviceState.NULL, true);
             mStateTracker_shortTermReconnect = null;
             mTxnManager = null;
+            mBondMgr = null;
         }
     }
 
@@ -161,7 +169,7 @@ public class BleDevice extends BleNode
     {
         if (mtuSize > 22 && mtuSize <= 517 && is(CONNECTED))
         {
-            getManager().mTaskManager.add(new P_Task_RequestMtu(this, null, mtuSize, listener));
+            getManager().mTaskManager.add(new P_Task_RequestMtu(this, null, mtuSize, mTxnManager.getCurrent(), listener));
             return true;
         }
         return false;
@@ -172,9 +180,52 @@ public class BleDevice extends BleNode
         return mConnectionPriority;
     }
 
-    public void setConnectionPriority(BleConnectionPriority priority, ReadWriteListener listener)
+    void updateConnectionPriority(BleConnectionPriority priority)
     {
-        // TODO - Actually implement this.
+        mConnectionPriority = priority;
+    }
+
+    /**
+     * Same as {@link #setConnectionPriority(BleConnectionPriority, ReadWriteListener)}, without the {@link ReadWriteListener} argument, if you don't
+     * care about when this updates (or are using a default {@link ReadWriteListener} in {@link BleManager}).
+     */
+    public ReadWriteEvent setConnectionPriority(BleConnectionPriority priority)
+    {
+        return setConnectionPriority_private(priority, null, P_TaskPriority.LOW);
+    }
+
+    /**
+     * Wrapper for {@link BluetoothGatt#requestConnectionPriority(int)} which attempts to change the connection priority for a given connection.
+     * This will eventually update the value returned by {@link #getConnectionPriority()} but it is not
+     * instantaneous. When we receive confirmation from the native stack then this value will be updated. The device must be {@link BleDeviceState#CONNECTED} for
+     * this call to succeed.
+     *
+     * @see #setConnectionPriority(BleConnectionPriority, ReadWriteListener)
+     * @see #getConnectionPriority()
+     *
+     * @return (see similar comment for return value of {@link #connect(BleTransaction.Auth, BleTransaction.Init, StateListener, ConnectionFailListener)}).
+     */
+    public ReadWriteEvent setConnectionPriority(BleConnectionPriority priority, ReadWriteListener listener)
+    {
+        return setConnectionPriority_private(priority, listener, P_TaskPriority.LOW);
+    }
+
+    private ReadWriteEvent setConnectionPriority_private(BleConnectionPriority priority, ReadWriteListener listener, P_TaskPriority taskPriority)
+    {
+        if (!Utils.isLollipop())
+        {
+            ReadWriteEvent event = P_EventFactory.newReadWriteEvent(this, priority, ReadWriteListener.Status.ANDROID_VERSION_NOT_SUPPORTED, BleStatuses.GATT_STATUS_NOT_APPLICABLE, 0d, 0d, true);
+            postReadWriteEvent(listener, event);
+            return event;
+        }
+        ReadWriteEvent event = mServiceMgr.getEarlyOutEvent(Uuids.INVALID, Uuids.INVALID, Uuids.INVALID, null, ReadWriteListener.Type.WRITE, ReadWriteListener.Target.CONNECTION_PRIORITY);
+        if (event != null)
+        {
+            postReadWriteEvent(listener, event);
+            return event;
+        }
+        addTask(new P_Task_RequestConnectionPriority(this, null, mTxnManager.getCurrent(), taskPriority, priority, listener));
+        return NULL_READWRITE_EVENT();
     }
 
     /**
@@ -343,42 +394,42 @@ public class BleDevice extends BleNode
         // TODO - Implement this
     }
 
-    public void connect(BleTransaction.Auth authTxn)
+    public ConnectionFailEvent connect(BleTransaction.Auth authTxn)
     {
-        connect(authTxn, getConfig().defaultInitTxn, null, null);
+        return connect(authTxn, getConfig().defaultInitTxn, null, null);
     }
 
-    public void connect(BleTransaction.Init initTxn)
+    public ConnectionFailEvent connect(BleTransaction.Init initTxn)
     {
-        connect(getConfig().defaultAuthTxn, initTxn, null, null);
+        return connect(getConfig().defaultAuthTxn, initTxn, null, null);
     }
 
-    public void connect(BleTransaction.Auth authTxn, BleTransaction.Init initTxn)
+    public ConnectionFailEvent connect(BleTransaction.Auth authTxn, BleTransaction.Init initTxn)
     {
-        connect(authTxn, initTxn, null, null);
+        return connect(authTxn, initTxn, null, null);
     }
 
-    public void connect(DeviceConnectionFailListener failListener)
+    public ConnectionFailEvent connect(DeviceConnectionFailListener failListener)
     {
-        connect(getConfig().defaultAuthTxn, getConfig().defaultInitTxn, null, failListener);
+        return connect(getConfig().defaultAuthTxn, getConfig().defaultInitTxn, null, failListener);
     }
 
-    public void connect(DeviceStateListener stateListener, DeviceConnectionFailListener failListener)
+    public ConnectionFailEvent connect(DeviceStateListener stateListener, DeviceConnectionFailListener failListener)
     {
-        connect(getConfig().defaultAuthTxn, getConfig().defaultInitTxn, stateListener, failListener);
+        return connect(getConfig().defaultAuthTxn, getConfig().defaultInitTxn, stateListener, failListener);
     }
 
-    public void connect(BleTransaction.Auth authTxn, DeviceStateListener stateListener, DeviceConnectionFailListener failListener)
+    public ConnectionFailEvent connect(BleTransaction.Auth authTxn, DeviceStateListener stateListener, DeviceConnectionFailListener failListener)
     {
-        connect(authTxn, getConfig().defaultInitTxn, stateListener, failListener);
+        return connect(authTxn, getConfig().defaultInitTxn, stateListener, failListener);
     }
 
-    public void connect(BleTransaction.Init initTxn, DeviceStateListener stateListener, DeviceConnectionFailListener failListener)
+    public ConnectionFailEvent connect(BleTransaction.Init initTxn, DeviceStateListener stateListener, DeviceConnectionFailListener failListener)
     {
-        connect(getConfig().defaultAuthTxn, initTxn, stateListener, failListener);
+        return connect(getConfig().defaultAuthTxn, initTxn, stateListener, failListener);
     }
 
-    public void connect(BleTransaction.Auth authTxn, BleTransaction.Init initTxn, DeviceStateListener stateListener, DeviceConnectionFailListener failListener)
+    public ConnectionFailEvent connect(BleTransaction.Auth authTxn, BleTransaction.Init initTxn, DeviceStateListener stateListener, DeviceConnectionFailListener failListener)
     {
         mTxnManager.setAuthTxn(authTxn);
         mTxnManager.setInitTxn(initTxn);
@@ -390,46 +441,70 @@ public class BleDevice extends BleNode
         {
             mStateTracker.setListener(stateListener);
         }
-        connect();
+        return connect();
     }
 
-    public void connect()
+    public ConnectionFailEvent connect()
     {
-        connect_private(true);
+        return connect_private(true);
     }
 
-    private void connect_private(boolean explicit)
+    public BondListener.BondEvent bond(BondListener listener)
+    {
+        if (listener != null)
+        {
+            mBondMgr.setBondListener(listener);
+        }
+
+        if (isNull())
+        {
+            return mBondMgr.postBondEvent(P_StateTracker.E_Intent.INTENTIONAL, BleStatuses.BOND_FAIL_REASON_NOT_APPLICABLE, BondListener.Status.NULL_DEVICE);
+        }
+        if (isAny(BONDED, BONDING))
+        {
+            return mBondMgr.postBondEvent(P_StateTracker.E_Intent.INTENTIONAL, BleStatuses.BOND_FAIL_REASON_NOT_APPLICABLE, BondListener.Status.ALREADY_BONDING_OR_BONDED);
+        }
+        getManager().mTaskManager.add(new P_Task_Bond(this, null));
+
+        return NULL_BOND_EVENT();
+    }
+
+    void unbond_internal(final P_TaskPriority priority_nullable, final BondListener.Status status)
+    {
+        getManager().mTaskManager.add(new P_Task_Unbond(this, null, priority_nullable));
+
+        final boolean wasBonding = is(BONDING);
+
+        stateTracker().update(P_StateTracker.E_Intent.INTENTIONAL, BleStatuses.GATT_STATUS_NOT_APPLICABLE, P_GattManager.RESET_TO_UNBONDED);
+
+        if (wasBonding)
+        {
+            mBondMgr.postBondEvent(P_StateTracker.E_Intent.INTENTIONAL, BleStatuses.BOND_FAIL_REASON_NOT_APPLICABLE, status);
+        }
+    }
+
+    public boolean unBond()
+    {
+        final boolean alreadyUnbonded = is(UNBONDED);
+
+        unbond_internal(null, BondListener.Status.CANCELLED_FROM_UNBOND);
+
+        return alreadyUnbonded;
+    }
+
+    private ConnectionFailEvent connect_private(boolean explicit)
     {
         if (!isAny(CONNECTING, CONNECTED, CONNECTING_OVERALL) || isAny(RECONNECTING_SHORT_TERM, RECONNECTING_LONG_TERM))
         {
             mConnectionFailMgr.onExplicitConnectionStarted();
-            if (getConfig().bondOnConnectOption != null)
-            {
-                switch (getConfig().bondOnConnectOption)
-                {
-                    case BOND:
-                        if (!mGattManager.isBonded() || mGattManager.isBonding())
-                        {
-                            getManager().mTaskManager.add(new P_Task_Bond(this, null));
-                        }
-                        break;
-                    case RE_BOND:
-                        if (mGattManager.isBonded())
-                        {
-                            getManager().mTaskManager.add(new P_Task_Unbond(this, null));
-                        }
-                        getManager().mTaskManager.add(new P_Task_Bond(this, null));
-                        break;
-                    default:
-                        if (Utils.phoneHasBondingIssues())
-                        {
-                            getManager().mTaskManager.add(new P_Task_Unbond(this, null));
-                            getManager().mTaskManager.add(new P_Task_Bond(this, null));
-                        }
-                }
-            }
+            mBondMgr.onConnectAttempt();
             stateTracker().update(P_StateTracker.E_Intent.INTENTIONAL, BleStatuses.GATT_STATUS_NOT_APPLICABLE, CONNECTING_OVERALL, true);
             getManager().mTaskManager.add(new P_Task_Connect(this, null, explicit));
+            return NULL_CONNECTIONFAIL();
+        }
+        else
+        {
+            return DeviceConnectionFailListener.ConnectionFailEvent.EARLY_OUT(this, Status.ALREADY_CONNECTING_OR_CONNECTED);
         }
     }
 
@@ -459,73 +534,210 @@ public class BleDevice extends BleNode
         // TODO - Implement this
     }
 
-    public ReadWriteEvent NULL_READWRITE_EVENT()
+    public ReadWriteEvent read(BleRead read, ReadWriteListener listener)
     {
-        if (mNullReadWriteEvent != null)
+        return read_internal(read.serviceUuid(), read.charUuid(), read.descUuid(), listener);
+    }
+
+    public ReadWriteEvent read(BleRead read)
+    {
+        return read_internal(read.serviceUuid(), read.charUuid(), read.descUuid(), null);
+    }
+
+    public ReadWriteEvent read(UUID charUuid, ReadWriteListener listener)
+    {
+        return read_internal(null, charUuid, null, listener);
+    }
+
+    public ReadWriteEvent read(UUID charUuid)
+    {
+        return read_internal(null, charUuid, null, null);
+    }
+
+    public ReadWriteEvent read(UUID serviceUuid, UUID charUuid, ReadWriteListener listener)
+    {
+        return read_internal(serviceUuid, charUuid, null, listener);
+    }
+
+    public ReadWriteEvent read(UUID serviceUuid, UUID charUuid)
+    {
+        return read_internal(serviceUuid, charUuid, null, null);
+    }
+
+    public ReadWriteEvent readDescriptor(BleRead read, ReadWriteListener listener)
+    {
+        return read_internal(read.serviceUuid(), read.charUuid(), read.descUuid(), listener);
+    }
+
+    public ReadWriteEvent readDescriptor(BleRead read)
+    {
+        return read_internal(read.serviceUuid(), read.charUuid(), read.descUuid(), null);
+    }
+
+    public ReadWriteEvent readDescriptor(UUID charUuid, UUID descriptorUuid, ReadWriteListener listener)
+    {
+        return read_internal(null, charUuid, descriptorUuid, listener);
+    }
+
+    public ReadWriteEvent readDescriptor(UUID charUuid, UUID descriptorUuid)
+    {
+        return read_internal(null, charUuid, descriptorUuid, null);
+    }
+
+    public ReadWriteEvent readDescriptor(UUID serviceUuid, UUID charUuid, UUID descriptorUuid, ReadWriteListener listener)
+    {
+        return read_internal(serviceUuid, charUuid, descriptorUuid, listener);
+    }
+
+    public ReadWriteEvent readDescriptor(UUID serviceUuid, UUID charUuid, UUID descriptorUuid)
+    {
+        return read_internal(serviceUuid, charUuid, descriptorUuid, null);
+    }
+
+    private ReadWriteEvent read_internal(UUID serviceUuid, UUID charUuid, UUID descriptorUuid, ReadWriteListener listener)
+    {
+        ReadWriteListener.Target t = (descriptorUuid == null || descriptorUuid.equals(Uuids.INVALID)) ? ReadWriteListener.Target.CHARACTERISTIC : ReadWriteListener.Target.DESCRIPTOR;
+        ReadWriteEvent earlyEvent = mServiceMgr.getEarlyOutEvent(serviceUuid, charUuid, descriptorUuid, null, ReadWriteListener.Type.READ, t);
+        if (earlyEvent != null)
         {
-            return mNullReadWriteEvent;
+            postReadWriteEvent(listener, earlyEvent);
+
+            return earlyEvent;
         }
 
-        mNullReadWriteEvent = ReadWriteEvent.NULL(this);
-
-        return mNullReadWriteEvent;
-    }
-
-    public void read(UUID charUuid, ReadWriteListener listener)
-    {
-        // TODO
-        read(null, charUuid, listener);
-    }
-
-    public void read(UUID serviceUuid, UUID charUuid, ReadWriteListener listener)
-    {
-        if (!isNull())
+        if (t == ReadWriteListener.Target.CHARACTERISTIC)
         {
-            final P_Task_Read read = new P_Task_Read(this, null, serviceUuid, charUuid, listener);
+            mBondMgr.bondIfNeeded(charUuid, BleDeviceConfig.BondFilter.CharacteristicEventType.READ);
+            final P_Task_Read read = new P_Task_Read(this, null, serviceUuid, charUuid, mTxnManager.getCurrent(), listener);
             addTask(read);
         }
-    }
-
-    public void write(UUID charUuid, byte[] data, ReadWriteListener listener)
-    {
-        write(null, charUuid, data, listener);
-    }
-
-    public void write(UUID serviceUuid, UUID charUuid, byte[] data, ReadWriteListener listener)
-    {
-        if (!isNull())
+        else
         {
-            final P_Task_Write write = new P_Task_Write(this, null, serviceUuid, charUuid, data, listener);
+            // TODO - Implement reading descriptor task
+        }
+        return NULL_READWRITE_EVENT();
+    }
+
+    public ReadWriteEvent write(BleWrite write, ReadWriteListener listener)
+    {
+        return write(write.serviceUuid(), write.charUuid(), write.value(), listener);
+    }
+
+    public ReadWriteEvent write(BleWrite write)
+    {
+        return write(write.serviceUuid(), write.charUuid(), write.value(), null);
+    }
+
+    public ReadWriteEvent write(UUID charUuid, byte[] data, ReadWriteListener listener)
+    {
+        return write(null, charUuid, data, listener);
+    }
+
+    public ReadWriteEvent write(UUID charUuid, byte[] data)
+    {
+        return write(null, charUuid, data, null);
+    }
+
+    public ReadWriteEvent write(UUID serviceUuid, UUID charUuid, byte[] data)
+    {
+        return write_internal(serviceUuid, charUuid, null, data, null);
+    }
+
+    public ReadWriteEvent write(UUID serviceUuid, UUID charUuid, byte[] data, ReadWriteListener listener)
+    {
+        return write_internal(serviceUuid, charUuid, null, data, listener);
+    }
+
+    public ReadWriteEvent writeDescriptor(BleWrite write, ReadWriteListener listener)
+    {
+        return write_internal(write.serviceUuid(), write.charUuid(), write.descriptorUuid(), write.value(), listener);
+    }
+
+    public ReadWriteEvent writeDescriptor(BleWrite write)
+    {
+        return write_internal(write.serviceUuid(), write.charUuid(), write.descriptorUuid(), write.value(), null);
+    }
+
+    public ReadWriteEvent writeDescriptor(UUID charUuid, UUID descriptorUuid, byte[] data)
+    {
+        return write_internal(null, charUuid, descriptorUuid, data, null);
+    }
+
+    public ReadWriteEvent writeDescriptor(UUID charUuid, UUID descriptorUuid, byte[] data, ReadWriteListener listener)
+    {
+        return write_internal(null, charUuid, descriptorUuid, data, listener);
+    }
+
+    public ReadWriteEvent writeDescriptor(UUID serviceUuid, UUID charUuid, UUID descriptorUuid, byte[] data)
+    {
+        return write_internal(serviceUuid, charUuid, descriptorUuid, data, null);
+    }
+
+    public ReadWriteEvent writeDescriptor(UUID serviceUuid, UUID charUuid, UUID descriptorUuid, byte[] data, ReadWriteListener listener)
+    {
+        return write_internal(serviceUuid, charUuid, descriptorUuid, data, listener);
+    }
+
+    private ReadWriteEvent write_internal(UUID serviceUuid, UUID charUuid, UUID descriptorUuid, byte[] data, ReadWriteListener listener)
+    {
+        ReadWriteListener.Target t = (descriptorUuid == null || descriptorUuid.equals(Uuids.INVALID)) ? ReadWriteListener.Target.CHARACTERISTIC : ReadWriteListener.Target.DESCRIPTOR;
+        ReadWriteEvent earlyOutEvent = mServiceMgr.getEarlyOutEvent(serviceUuid, charUuid, descriptorUuid, data, ReadWriteListener.Type.WRITE, t);
+        if (earlyOutEvent != null)
+        {
+            postReadWriteEvent(listener, earlyOutEvent);
+
+            return earlyOutEvent;
+        }
+
+        if (t == ReadWriteListener.Target.DESCRIPTOR)
+        {
+            // TODO - Implement writing descriptor task
+        }
+        else
+        {
+            mBondMgr.bondIfNeeded(charUuid, BleDeviceConfig.BondFilter.CharacteristicEventType.WRITE);
+            final P_Task_Write write = new P_Task_Write(this, null, serviceUuid, charUuid, data, mTxnManager.getCurrent(), listener);
             addTask(write);
         }
+
+        return NULL_READWRITE_EVENT();
     }
 
-    public void enableNotify(UUID serviceUuid, UUID charUuid, ReadWriteListener listener)
+    public ReadWriteEvent enableNotify(UUID serviceUuid, UUID charUuid, ReadWriteListener listener)
     {
-        if (!isNull())
+        ReadWriteEvent earlyEvent = mServiceMgr.getEarlyOutEvent(serviceUuid, charUuid, Uuids.INVALID, null, ReadWriteListener.Type.ENABLING_NOTIFICATION, ReadWriteListener.Target.CHARACTERISTIC);
+        if (earlyEvent != null)
         {
-            P_Task_ToggleNotify toggle = new P_Task_ToggleNotify(this, null, serviceUuid, charUuid, true, listener);
-            addTask(toggle);
+            postReadWriteEvent(listener, earlyEvent);
+            return earlyEvent;
         }
+        mBondMgr.bondIfNeeded(charUuid, BleDeviceConfig.BondFilter.CharacteristicEventType.ENABLE_NOTIFY);
+        P_Task_ToggleNotify toggle = new P_Task_ToggleNotify(this, null, serviceUuid, charUuid, true, mTxnManager.getCurrent(), listener);
+        addTask(toggle);
+        return NULL_READWRITE_EVENT();
     }
 
-    public void enableNotify(UUID charUuid, ReadWriteListener listener)
+    public ReadWriteEvent enableNotify(UUID charUuid, ReadWriteListener listener)
     {
-        enableNotify(null, charUuid, listener);
+        return enableNotify(null, charUuid, listener);
     }
 
-    public void disableNotify(UUID serviceUuid, UUID charUuid, ReadWriteListener listener)
+    public ReadWriteEvent disableNotify(UUID serviceUuid, UUID charUuid, ReadWriteListener listener)
     {
-        if (!isNull())
+        ReadWriteEvent earlyEvent = mServiceMgr.getEarlyOutEvent(serviceUuid, charUuid, null, null, ReadWriteListener.Type.DISABLING_NOTIFICATION, ReadWriteListener.Target.CHARACTERISTIC);
+        if (earlyEvent != null)
         {
-            final P_Task_ToggleNotify toggle = new P_Task_ToggleNotify(this, null, serviceUuid, charUuid, false, listener);
-            addTask(toggle);
+            postReadWriteEvent(listener, earlyEvent);
+            return earlyEvent;
         }
+        final P_Task_ToggleNotify toggle = new P_Task_ToggleNotify(this, null, serviceUuid, charUuid, false, mTxnManager.getCurrent(), listener);
+        addTask(toggle);
+        return NULL_READWRITE_EVENT();
     }
 
-    public void disableNotify(UUID charUuid, ReadWriteListener listener)
+    public ReadWriteEvent disableNotify(UUID charUuid, ReadWriteListener listener)
     {
-        disableNotify(null, charUuid, listener);
+        return disableNotify(null, charUuid, listener);
     }
 
     public void disconnectWithReason(P_TaskPriority priority, Status bleTurningOff, Timing notApplicable, int gattStatusNotApplicable, int bondFailReasonNotApplicable, ReadWriteEvent readWriteEvent)
@@ -608,16 +820,20 @@ public class BleDevice extends BleNode
 
     void onNotify(final NotifyListener.NotifyEvent event)
     {
-        if (mNotifyListener != null)
+        getManager().mPostManager.postCallback(new Runnable()
         {
-            getManager().mPostManager.postCallback(new Runnable()
+            @Override public void run()
             {
-                @Override public void run()
+                if (mNotifyListener != null)
                 {
                     mNotifyListener.onEvent(event);
                 }
-            });
-        }
+                if (getManager().mDefaultNotifyListener != null)
+                {
+                    getManager().mDefaultNotifyListener.onEvent(event);
+                }
+            }
+        });
     }
 
     void doNativeConnect()
@@ -679,10 +895,16 @@ public class BleDevice extends BleNode
     {
         stateTracker().update(P_StateTracker.E_Intent.UNINTENTIONAL, BleStatuses.GATT_STATUS_NOT_APPLICABLE, DISCOVERING_SERVICES, false, SERVICES_DISCOVERED, true,
                 AUTHENTICATING, true);
-        // TODO - Move on to next stage, which should be running any auth/init transactions
-        // TODO - For now, succeeding connect task here, until txns are implemented
 
         getManager().mTaskManager.succeedTask(P_Task_Connect.class, this);
+
+        if (mConnectionPriority != BleConnectionPriority.MEDIUM)
+        {
+            if (isAny(RECONNECTING_SHORT_TERM, RECONNECTING_LONG_TERM))
+            {
+                setConnectionPriority_private(mConnectionPriority, null, P_TaskPriority.MEDIUM);
+            }
+        }
 
         if (mTxnManager.getAuthTxn() != null)
         {
@@ -703,6 +925,11 @@ public class BleDevice extends BleNode
         }
     }
 
+    void onAuthenticated()
+    {
+        stateTracker().update(P_StateTracker.E_Intent.UNINTENTIONAL, BleStatuses.GATT_STATUS_NOT_APPLICABLE, AUTHENTICATED, true, AUTHENTICATING, false);
+    }
+
     void onInitialized()
     {
         mConnectionFailMgr.onFullyInitialized();
@@ -711,29 +938,97 @@ public class BleDevice extends BleNode
 
     void onBonding(P_StateTracker.E_Intent intent)
     {
-        stateTracker().update(intent, BleStatuses.GATT_STATUS_NOT_APPLICABLE, P_GattManager.RESET_TO_BONDING);
+        mBondMgr.onBonding(intent);
     }
 
     void onBond(P_StateTracker.E_Intent intent)
     {
-        stateTracker().update(intent, BleStatuses.GATT_STATUS_NOT_APPLICABLE, P_GattManager.RESET_TO_BONDED);
-        postBondEvent(intent, BleStatuses.BOND_SUCCESS, BondListener.Status.SUCCESS);
+        mBondMgr.onBond(intent);
     }
 
     void onBondFailed(P_StateTracker.E_Intent intent, int failReason, BondListener.Status status)
     {
-        stateTracker().update(intent, failReason, P_GattManager.RESET_TO_UNBONDED);
-        postBondEvent(intent, failReason, status);
+        mBondMgr.onBondFailed(intent, failReason, status);
     }
 
     void onUnbond(P_StateTracker.E_Intent intent)
     {
-        stateTracker().update(intent, BleStatuses.GATT_STATUS_NOT_APPLICABLE, P_GattManager.RESET_TO_UNBONDED);
-        postBondEvent(intent, BleStatuses.GATT_STATUS_NOT_APPLICABLE, BondListener.Status.SUCCESS);
+        mBondMgr.onUnbond(intent);
     }
 
+    void onMtuChanged(int newMtu)
+    {
+        mMtu = newMtu;
+    }
 
+    void postReadWriteEvent(final ReadWriteListener listener, final ReadWriteEvent event)
+    {
+        getManager().mPostManager.postCallback(new Runnable()
+        {
+            @Override public void run()
+            {
+                if (listener != null)
+                {
+                    listener.onEvent(event);
+                }
+                if (getManager().mDefaultReadWriteListener != null)
+                {
+                    getManager().mDefaultReadWriteListener.onEvent(event);
+                }
+            }
+        });
+    }
 
+    void addReadTime(long time)
+    {
+        // TODO - Implement with time estimators
+    }
+
+    void addWriteTime(long time)
+    {
+        // TODO - Implement with addReadTime once time estimators are implemented
+    }
+
+    private ReadWriteEvent EARLY_OUT_READWRITE(ReadWriteListener.Status reason, ReadWriteListener.Type type)
+    {
+        return P_EventFactory.newReadWriteEvent(this, type, mRssi, reason, BleStatuses.GATT_STATUS_NOT_APPLICABLE, 0d, 0d, true);
+    }
+
+    BondListener.BondEvent NULL_BOND_EVENT()
+    {
+        if (mNullBondEvent != null)
+        {
+            return mNullBondEvent;
+        }
+
+        mNullBondEvent = BondListener.BondEvent.NULL(this);
+
+        return mNullBondEvent;
+    }
+
+    private ReadWriteEvent NULL_READWRITE_EVENT()
+    {
+        if (mNullReadWriteEvent != null)
+        {
+            return mNullReadWriteEvent;
+        }
+
+        mNullReadWriteEvent = ReadWriteEvent.NULL(this);
+
+        return mNullReadWriteEvent;
+    }
+
+    private DeviceConnectionFailListener.ConnectionFailEvent NULL_CONNECTIONFAIL()
+    {
+        if (mNullConnectionFailEvent != null)
+        {
+            return mNullConnectionFailEvent;
+        }
+
+        mNullConnectionFailEvent = DeviceConnectionFailListener.ConnectionFailEvent.NULL(this);
+
+        return mNullConnectionFailEvent;
+    }
 
     private void resetToDisconnected()
     {
@@ -753,32 +1048,6 @@ public class BleDevice extends BleNode
         else
         {
             stateTracker().update(P_StateTracker.E_Intent.UNINTENTIONAL, BleStatuses.GATT_STATUS_NOT_APPLICABLE, UNBONDED, true);
-        }
-    }
-
-    private void postBondEvent(P_StateTracker.E_Intent intent, int failReason, BondListener.Status status)
-    {
-        if (mBondListener != null)
-        {
-            final BondListener.BondEvent event = P_EventFactory.newBondEvent(this, status, failReason, intent.convert());
-            getManager().mPostManager.postCallback(new Runnable()
-            {
-                @Override public void run()
-                {
-                    mBondListener.onEvent(event);
-                }
-            });
-        }
-        if (getManager().mDefaultBondListener != null)
-        {
-            final BondListener.BondEvent event = P_EventFactory.newBondEvent(this, status, failReason, intent.convert());
-            getManager().mPostManager.postCallback(new Runnable()
-            {
-                @Override public void run()
-                {
-                    getManager().mDefaultBondListener.onEvent(event);
-                }
-            });
         }
     }
 

@@ -3,56 +3,43 @@ package com.idevicesinc.sweetblue;
 import com.idevicesinc.sweetblue.listeners.P_EventFactory;
 import com.idevicesinc.sweetblue.listeners.ReadWriteListener;
 import com.idevicesinc.sweetblue.utils.BleStatuses;
-import com.idevicesinc.sweetblue.utils.Uuids;
-
 import java.util.UUID;
 
 
-public final class P_Task_Write extends P_Task_Transactionable
+public final class P_Task_Write extends P_Task_ReadOrWrite
 {
 
-    private UUID mServiceUuid;
-    private UUID mCharUuid;
-    private ReadWriteListener mListener;
     private byte[] mValue;
 
 
-    public P_Task_Write(BleDevice device, IStateListener listener, UUID serviceUuid, UUID charUuid, byte[] value, ReadWriteListener writeListener)
+    public P_Task_Write(BleDevice device, IStateListener listener, UUID serviceUuid, UUID charUuid, byte[] value, BleTransaction txn, ReadWriteListener writeListener)
     {
-        super(device, listener);
-        mServiceUuid = serviceUuid;
-        mCharUuid = charUuid;
-        mListener = writeListener;
+        super(device, listener, serviceUuid, charUuid, null, txn, writeListener);
         mValue = value;
+    }
+
+    public P_Task_Write(BleDevice device, IStateListener listener, BleWrite write, BleTransaction txn, ReadWriteListener writeListener)
+    {
+        this(device, listener, write.serviceUuid(), write.charUuid(), write.value(), txn, writeListener);
     }
 
     @Override public final void execute()
     {
-        if (!getDevice().mGattManager.write(mServiceUuid, mCharUuid, mValue))
+        super.execute();
+        if (!write_earlyOut(mValue))
         {
-            ReadWriteListener.ReadWriteEvent event = P_EventFactory.newReadWriteEvent(getDevice(), mServiceUuid, mCharUuid, ReadWriteListener.ReadWriteEvent.NON_APPLICABLE_UUID,
-                    ReadWriteListener.Type.WRITE, ReadWriteListener.Target.CHARACTERISTIC, null, ReadWriteListener.Status.NO_MATCHING_TARGET, 133, 0, 0, true);
-            if (mListener != null)
+            if (!getDevice().mGattManager.write(getServiceUuid(), getCharUuid(), mValue))
             {
-                mListener.onEvent(event);
+                ReadWriteListener.ReadWriteEvent event = newReadWriteEvent(ReadWriteListener.Status.NO_MATCHING_TARGET, BleStatuses.GATT_STATUS_NOT_APPLICABLE, mValue);
+                getDevice().postReadWriteEvent(getListener(), event);
+                failImmediately();
             }
-            failImmediately();
         }
     }
 
-    final void onWrite(final ReadWriteListener.ReadWriteEvent event)
+    final void onWrite()
     {
-        getManager().mPostManager.postCallback(new Runnable()
-        {
-            @Override public void run()
-            {
-                if (mListener != null)
-                {
-                    mListener.onEvent(event);
-                }
-            }
-        });
-        succeed();
+        succeedWrite(mValue);
     }
 
     final byte[] getValue()
@@ -63,22 +50,8 @@ public final class P_Task_Write extends P_Task_Transactionable
     @Override final void onTaskTimedOut()
     {
         super.onTaskTimedOut();
-        super.onTaskTimedOut();
-        if (mListener != null)
-        {
-            getManager().mPostManager.postCallback(new Runnable()
-            {
-                @Override public void run()
-                {
-                    if (mListener != null)
-                    {
-                        ReadWriteListener.ReadWriteEvent event = P_EventFactory.newReadWriteEvent(getDevice(), mServiceUuid, mCharUuid, Uuids.INVALID, ReadWriteListener.Type.WRITE,
-                                ReadWriteListener.Target.CHARACTERISTIC, new byte[0], ReadWriteListener.Status.TIMED_OUT, BleStatuses.GATT_STATUS_NOT_APPLICABLE, 0, 0, false);
-                        mListener.onEvent(event);
-                    }
-                }
-            });
-        }
+        ReadWriteListener.ReadWriteEvent event = newReadWriteEvent(ReadWriteListener.Status.TIMED_OUT, BleStatuses.GATT_STATUS_NOT_APPLICABLE, mValue);
+        getDevice().postReadWriteEvent(getListener(), event);
     }
 
     @Override final P_TaskPriority defaultPriority()
@@ -86,4 +59,9 @@ public final class P_Task_Write extends P_Task_Transactionable
         return P_TaskPriority.LOW;
     }
 
+    @Override protected ReadWriteListener.ReadWriteEvent newReadWriteEvent(ReadWriteListener.Status status, int gattStatus, byte[] data)
+    {
+        return P_EventFactory.newReadWriteEvent(getDevice(), getServiceUuid(), getCharUuid(), getDescUuid(), ReadWriteListener.Type.WRITE, getTarget(), mValue, status,
+                gattStatus, totalTime(), timeExecuting(), true);
+    }
 }

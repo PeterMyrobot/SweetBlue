@@ -6,7 +6,6 @@ import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
-
 import com.idevicesinc.sweetblue.BleConnectionPriority;
 import com.idevicesinc.sweetblue.BleDeviceState;
 import com.idevicesinc.sweetblue.BleDevice;
@@ -23,14 +22,14 @@ import com.idevicesinc.sweetblue.utils.UsesCustomNull;
 import com.idevicesinc.sweetblue.utils.Utils_Byte;
 import com.idevicesinc.sweetblue.utils.Utils_String;
 import com.idevicesinc.sweetblue.utils.Uuids;
-
 import java.util.Arrays;
 import java.util.UUID;
+
 
 public interface ReadWriteListener
 {
 
-    static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+    byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
     /**
      * A value returned to {@link ReadWriteListener#onEvent(ReadWriteEvent)}
@@ -40,7 +39,7 @@ public interface ReadWriteListener
      *
      * @see ReadWriteEvent#status()
      */
-    public static enum Status implements UsesCustomNull
+    enum Status implements UsesCustomNull
     {
         /**
          * As of now, only used for {@link DeviceConnectionFailListener.ConnectionFailEvent#txnFailReason()} in some cases.

@@ -1,7 +1,15 @@
 package com.idevicesinc.sweetblue;
 
 
+import com.idevicesinc.sweetblue.annotations.Immutable;
+import com.idevicesinc.sweetblue.listeners.BondListener;
+import com.idevicesinc.sweetblue.listeners.ReadWriteListener;
+import com.idevicesinc.sweetblue.utils.Event;
 import com.idevicesinc.sweetblue.utils.Interval;
+import com.idevicesinc.sweetblue.utils.Utils;
+import com.idevicesinc.sweetblue.utils.Utils_String;
+
+import java.util.UUID;
 
 public class BleDeviceConfig extends BleNodeConfig implements Cloneable
 {
@@ -39,9 +47,10 @@ public class BleDeviceConfig extends BleNodeConfig implements Cloneable
     public Boolean useGattRefresh								= false;
 
     /**
-     * The number of times SweetBlue will retry connecting to a device, if it fails. Default is <code>3</code>.
+     * The number of times SweetBlue will retry connecting to a device, if it fails. Default is <code>2</code> (So it will try a total of
+     * 3 times to connect).
      */
-    public int reconnectionTries                                = 3;
+    public int reconnectionTries                                = 2;
 
     /**
      * Default is {@link Interval#DISABLED}. If a device exceeds this amount of time since its
@@ -72,6 +81,8 @@ public class BleDeviceConfig extends BleNodeConfig implements Cloneable
      */
     public BondOnConnectOption bondOnConnectOption              = BondOnConnectOption.NONE;
 
+    public BondFilter bondFilter                                = new DefaultBondFilter();
+
     /**
      * Tells SweetBlue to use Android's built-in autoConnect option. It's been observed that this doesn't work very
      * well for some devices, so it's <code>false</code> by default.
@@ -92,6 +103,193 @@ public class BleDeviceConfig extends BleNodeConfig implements Cloneable
         return (BleDeviceConfig) super.clone();
     }
 
+
+    interface BondFilter
+    {
+
+        /**
+         * Class pass to {@link BondFilter#onEvent(ConnectEvent)} when attempting to connect
+         * to a {@link BleDevice}.
+         */
+        final class ConnectEvent
+        {
+
+            private final BleDevice mDevice;
+
+            ConnectEvent(BleDevice device)
+            {
+                mDevice = device;
+            }
+
+            /**
+             * Return the {@link BleDevice} attempting to connect.
+             */
+            public final BleDevice device()
+            {
+                return mDevice;
+            }
+        }
+
+        enum CharacteristicEventType
+        {
+            /**
+             * Started from {@link BleDevice#read(UUID, ReadWriteListener)} and related methods.
+             */
+            READ,
+
+            /**
+             * Started from {@link BleDevice#write(UUID, byte[], ReadWriteListener)} or overloads.
+             */
+            WRITE,
+
+            /**
+             * Started from {@link BleDevice#enableNotify(UUID, ReadWriteListener)} or overloads.
+             */
+            ENABLE_NOTIFY;
+        }
+
+        /**
+         * Class passed to {@link BondFilter#onEvent(CharacteristicEvent)}.
+         */
+        final class CharacteristicEvent extends Event
+        {
+
+            private final BleDevice m_device;
+            private final UUID m_uuid;
+            private final CharacteristicEventType m_type;
+
+
+            CharacteristicEvent(BleDevice device, UUID uuid, CharacteristicEventType type)
+            {
+                m_device = device;
+                m_uuid = uuid;
+                m_type = type;
+            }
+
+            /**
+             * Returns the {@link BleDevice} in question.
+             */
+            public final BleDevice device(){  return m_device;  }
+
+            /**
+             * Convience to return the mac address of {@link #device()}.
+             */
+            public final String macAddress()  {  return m_device.getMacAddress();  }
+
+            /**
+             * Returns the type of characteristic operation, read, write, etc.
+             */
+            public final CharacteristicEventType type(){  return m_type;  }
+
+            /**
+             * Returns the {@link UUID} of the characteristic in question.
+             */
+            public final UUID charUuid(){  return m_uuid;  }
+
+
+            @Override public final String toString()
+            {
+                return Utils_String.toString
+                        (
+                                this.getClass(),
+                                "device",		device().getName(),
+                                "charUuid",		device().getManager().getLogger().charName(charUuid()),
+                                "type",			type()
+                        );
+            }
+        }
+
+        /**
+         * Return value for the various interface methods of {@link BondFilter}.
+         * Use static constructor methods to create instances.
+         */
+        @com.idevicesinc.sweetblue.annotations.Advanced
+        @Immutable
+        class Please
+        {
+            private final boolean m_bond;
+            private final BondListener m_bondListener;
+
+
+            Please(boolean bond, BondListener listener)
+            {
+                m_bond = bond;
+                m_bondListener = listener;
+            }
+
+            boolean bond_private()
+            {
+                return m_bond;
+            }
+
+            BondListener listener()
+            {
+                return m_bondListener;
+            }
+
+            /**
+             * Device should be bonded if it isn't already.
+             */
+            public static Please bond()
+            {
+                return new Please(true, null);
+            }
+
+            /**
+             * Returns {@link #bond()} if the given condition holds <code>true</code>, {@link #doNothing()} otherwise.
+             */
+            public static Please bondIf(boolean condition)
+            {
+                return condition ? bond() : doNothing();
+            }
+
+            /**
+             * Same as {@link #bondIf(boolean)} but lets you pass a {@link BondListener} as well.
+             */
+            public static Please bondIf(boolean condition, BondListener listener)
+            {
+                return condition ? bond(listener) : doNothing();
+            }
+
+            /**
+             * Same as {@link #bond()} but lets you pass a {@link BondListener} as well.
+             */
+            public static Please bond(BondListener listener)
+            {
+                return new Please(true, listener);
+            }
+
+            /**
+             * Device's bond state should not be affected.
+             */
+            public static Please doNothing()
+            {
+                return new Please(false, null);
+            }
+        }
+
+        Please onEvent(ConnectEvent event);
+        Please onEvent(CharacteristicEvent event);
+    }
+
+    public class DefaultBondFilter implements BondFilter
+    {
+
+        public boolean phoneHasBondingIssues()
+        {
+            return Utils.phoneHasBondingIssues();
+        }
+
+        @Override public Please onEvent(ConnectEvent event)
+        {
+            return Please.bondIf(phoneHasBondingIssues());
+        }
+
+        @Override public Please onEvent(CharacteristicEvent event)
+        {
+            return Please.doNothing();
+        }
+    }
 
     public enum BondOnConnectOption
     {

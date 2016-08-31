@@ -156,7 +156,7 @@ public interface BondListener
             m_intent = intent;
         }
 
-        private static BondEvent NULL(final BleDevice device)
+        public static BondEvent NULL(final BleDevice device)
         {
             return new BondEvent(device, Status.NULL, BleStatuses.BOND_FAIL_REASON_NOT_APPLICABLE, State.ChangeIntent.NULL);
         }

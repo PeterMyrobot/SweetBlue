@@ -37,20 +37,20 @@ final class P_DeviceServiceManager extends P_ServiceManager
         return P_EventFactory.newReadWriteEvent(mDevice, serviceUuid, characteristicUuid, descriptorUuid, type, target, data, Status.NO_MATCHING_TARGET, gattStatus, 0.0, 0.0, /*solicited=*/true);
     }
 
-    final ReadWriteListener.ReadWriteEvent getEarlyOutEvent(UUID serviceUuid, UUID characteristicUuid, UUID descriptorUuid, FutureData futureData, ReadWriteListener.Type type, final Target target)
+    final ReadWriteListener.ReadWriteEvent getEarlyOutEvent(UUID serviceUuid, UUID characteristicUuid, UUID descriptorUuid, byte[] data, ReadWriteListener.Type type, final Target target)
     {
         final int gattStatus = BleStatuses.GATT_STATUS_NOT_APPLICABLE;
 
         if( mDevice.isNull() )
         {
-            return P_EventFactory.newReadWriteEvent(mDevice, serviceUuid, characteristicUuid, descriptorUuid, type, target, futureData.getData(), Status.NULL_DEVICE, gattStatus, 0.0, 0.0, /*solicited=*/true);
+            return P_EventFactory.newReadWriteEvent(mDevice, serviceUuid, characteristicUuid, descriptorUuid, type, target, data, Status.NULL_DEVICE, gattStatus, 0.0, 0.0, /*solicited=*/true);
         }
 
         if( false == mDevice.is(BleDeviceState.CONNECTED) )
         {
             if( type != Type.ENABLING_NOTIFICATION && type != Type.DISABLING_NOTIFICATION)
             {
-                return P_EventFactory.newReadWriteEvent(mDevice, serviceUuid, characteristicUuid, descriptorUuid, type, target, futureData.getData(), Status.NOT_CONNECTED, gattStatus, 0.0, 0.0, /*solicited=*/true);
+                return P_EventFactory.newReadWriteEvent(mDevice, serviceUuid, characteristicUuid, descriptorUuid, type, target, data, Status.NOT_CONNECTED, gattStatus, 0.0, 0.0, /*solicited=*/true);
             }
             else
             {
@@ -65,7 +65,7 @@ final class P_DeviceServiceManager extends P_ServiceManager
 
         if( target == Target.CHARACTERISTIC && characteristic == null || target == Target.DESCRIPTOR && descriptor == null)
         {
-            return newNoMatchingTargetEvent(type, target, futureData.getData(), serviceUuid, characteristicUuid, descriptorUuid);
+            return newNoMatchingTargetEvent(type, target, data, serviceUuid, characteristicUuid, descriptorUuid);
         }
 
         if( target == Target.CHARACTERISTIC )
@@ -75,7 +75,7 @@ final class P_DeviceServiceManager extends P_ServiceManager
 
         if( type != null && type.isWrite() )
         {
-            if( futureData == null )
+            if( data == null || data.length == 0)
             {
                 return P_EventFactory.newReadWriteEvent(mDevice, serviceUuid, characteristicUuid, null, type, target, (byte[]) null, Status.NULL_DATA, gattStatus, 0.0, 0.0, /*solicited=*/true);
             }
@@ -88,7 +88,7 @@ final class P_DeviceServiceManager extends P_ServiceManager
             if( (characteristic.getProperties() & property) == 0x0 )
             {
                 //TODO: Use correct gatt status even though we never reach gatt layer?
-                ReadWriteEvent result = P_EventFactory.newReadWriteEvent(mDevice, serviceUuid, characteristicUuid, null, type, target, futureData.getData(), Status.OPERATION_NOT_SUPPORTED, gattStatus, 0.0, 0.0, /*solicited=*/true);
+                ReadWriteEvent result = P_EventFactory.newReadWriteEvent(mDevice, serviceUuid, characteristicUuid, null, type, target, data, Status.OPERATION_NOT_SUPPORTED, gattStatus, 0.0, 0.0, /*solicited=*/true);
 
                 return result;
             }

@@ -135,6 +135,41 @@ final class P_GattManager
         }
     }
 
+    ReadWriteListener.Status writeDescriptor(UUID serviceUuid, UUID charUuid, UUID descUuid, byte[] data)
+    {
+        final BluetoothGattDescriptor desc_native = mDevice.getNativeDescriptor(serviceUuid, charUuid, descUuid);
+        if (desc_native == null)
+        {
+            return ReadWriteListener.Status.NO_MATCHING_TARGET;
+        }
+        if (!desc_native.setValue(data))
+        {
+            return ReadWriteListener.Status.FAILED_TO_SET_VALUE_ON_TARGET;
+        }
+        else
+        {
+            if (!mGatt.writeDescriptor(desc_native))
+            {
+                return ReadWriteListener.Status.FAILED_TO_SEND_OUT;
+            }
+            return null;
+        }
+    }
+
+    ReadWriteListener.Status readDescriptor(UUID serviceUuid, UUID charUuid, UUID descUuid)
+    {
+        final BluetoothGattDescriptor desc_native = mDevice.getNativeDescriptor(serviceUuid, charUuid, descUuid);
+        if (desc_native == null)
+        {
+            return ReadWriteListener.Status.NO_MATCHING_TARGET;
+        }
+        if (!mGatt.readDescriptor(desc_native))
+        {
+            return ReadWriteListener.Status.FAILED_TO_SEND_OUT;
+        }
+        return null;
+    }
+
     private boolean isCharNotify(BluetoothGattCharacteristic bchar)
     {
         return (bchar.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0x0;
@@ -258,23 +293,15 @@ final class P_GattManager
             P_Task_Read read = getManager().mTaskManager.getCurrent(P_Task_Read.class, mDevice);
             if (read != null)
             {
-                ReadWriteListener.Status rwStatus = Utils.isSuccess(status) ? ReadWriteListener.Status.SUCCESS : ReadWriteListener.Status.REMOTE_GATT_FAILURE;
                 final byte[] val = characteristic.getValue() == null ? null : characteristic.getValue().clone();
-                final ReadWriteListener.ReadWriteEvent event = P_EventFactory.newReadWriteEvent(mDevice, characteristic.getService().getUuid(), characteristic.getUuid(),
-                        ReadWriteListener.ReadWriteEvent.NON_APPLICABLE_UUID, ReadWriteListener.Type.READ, ReadWriteListener.Target.CHARACTERISTIC, val,
-                        rwStatus, status, 0, 0, true);
-                read.onRead(event);
-                getManager().mPostManager.postCallback(new Runnable()
+                if (Utils.isSuccess(status))
                 {
-                    @Override public void run()
-                    {
-                        if (getManager().mDefaultReadWriteListener != null)
-                        {
-                            getManager().mDefaultReadWriteListener.onEvent(event);
-                        }
-
-                    }
-                });
+                    read.onRead(val);
+                }
+                else
+                {
+                    read.onReadFailed(status);
+                }
             }
         }
 
@@ -284,20 +311,7 @@ final class P_GattManager
             P_Task_Write write = getManager().mTaskManager.getCurrent(P_Task_Write.class, mDevice);
             if (write != null)
             {
-                final ReadWriteListener.ReadWriteEvent event = P_EventFactory.newReadWriteEvent(mDevice, characteristic.getService().getUuid(), characteristic.getUuid(),
-                        ReadWriteListener.ReadWriteEvent.NON_APPLICABLE_UUID, ReadWriteListener.Type.WRITE, ReadWriteListener.Target.CHARACTERISTIC, write.getValue(),
-                        ReadWriteListener.Status.SUCCESS, status, 0, 0, true);
-                write.onWrite(event);
-                getManager().mPostManager.postCallback(new Runnable()
-                {
-                    @Override public void run()
-                    {
-                        if (getManager().mDefaultReadWriteListener != null)
-                        {
-                            getManager().mDefaultReadWriteListener.onEvent(event);
-                        }
-                    }
-                });
+                write.onWrite();
             }
         }
 
@@ -309,16 +323,6 @@ final class P_GattManager
             final NotifyListener.NotifyEvent event = P_EventFactory.newNotifyEvent(mDevice, characteristic.getService().getUuid(),
                     characteristic.getUuid(), characteristic.getValue(), type, NotifyListener.Status.SUCCESS);
             mDevice.onNotify(event);
-            getManager().mPostManager.postCallback(new Runnable()
-            {
-                @Override public void run()
-                {
-                    if (getManager().mDefaultNotifyListener != null)
-                    {
-                        getManager().mDefaultNotifyListener.onEvent(event);
-                    }
-                }
-            });
         }
 
         @Override public final void onMtuChanged(BluetoothGatt gatt, int mtu, int status)
@@ -328,12 +332,15 @@ final class P_GattManager
             if (task != null)
             {
                 boolean success = Utils.isSuccess(status);
-                ReadWriteListener.Status mtuStatus = success ? ReadWriteListener.Status.SUCCESS : ReadWriteListener.Status.REMOTE_GATT_FAILURE;
-                ReadWriteListener.ReadWriteEvent event = P_EventFactory.newReadWriteEvent(mDevice, ReadWriteListener.Type.WRITE, mDevice.getRssi(),
-                        mtuStatus, status, 0, 0, true);
-                task.onMtuChangeResult(event);
+                if (success)
+                {
+                    task.onMtuSuccess(mtu);
+                }
+                else
+                {
+                    task.onMtuFailed(status);
+                }
             }
-
         }
 
         @Override public final void onReliableWriteCompleted(BluetoothGatt gatt, int status)
@@ -344,6 +351,19 @@ final class P_GattManager
         @Override public final void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status)
         {
             updateGattInstance(gatt);
+            P_Task_ReadDescriptor read = getManager().mTaskManager.getCurrent(P_Task_ReadDescriptor.class, mDevice);
+            if (read != null)
+            {
+                if (Utils.isSuccess(status))
+                {
+                    byte[] value = descriptor.getValue();
+                    read.onRead(value);
+                }
+                else
+                {
+                    read.onReadFailed(status);
+                }
+            }
         }
 
         @Override public final void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status)
@@ -368,6 +388,21 @@ final class P_GattManager
                         }
                     }
                 });
+            }
+            else
+            {
+                P_Task_WriteDescriptor write = getManager().mTaskManager.getCurrent(P_Task_WriteDescriptor.class, mDevice);
+                if (write != null)
+                {
+                    if (Utils.isSuccess(status))
+                    {
+                        write.onWriteSucceeded();
+                    }
+                    else
+                    {
+                        write.onWriteFailed(status);
+                    }
+                }
             }
         }
 

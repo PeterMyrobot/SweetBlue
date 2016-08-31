@@ -1,6 +1,7 @@
 package com.idevicesinc.sweetblue.listeners;
 
 
+import com.idevicesinc.sweetblue.BleConnectionPriority;
 import com.idevicesinc.sweetblue.BleDevice;
 import com.idevicesinc.sweetblue.BleDeviceState;
 import com.idevicesinc.sweetblue.BleManager;
@@ -37,6 +38,16 @@ public final class P_EventFactory
     public static ReadWriteListener.ReadWriteEvent newReadWriteEvent(BleDevice device, ReadWriteListener.Type type, int rssi, ReadWriteListener.Status status, int gattStatus, double totalTime, double transitTime, boolean solicited)
     {
         return new ReadWriteListener.ReadWriteEvent(device, type, rssi, status, gattStatus, totalTime, transitTime, solicited);
+    }
+
+    public static ReadWriteListener.ReadWriteEvent newReadWriteEvent(BleDevice device, int mtu, ReadWriteListener.Status status, int gattStatus, double totalTime, double transitTime, boolean solicited)
+    {
+        return new ReadWriteListener.ReadWriteEvent(device, mtu, status, gattStatus, totalTime, transitTime, solicited);
+    }
+
+    public static ReadWriteListener.ReadWriteEvent newReadWriteEvent(BleDevice device, BleConnectionPriority connPriority, ReadWriteListener.Status status, int gattStatus, double totalTime, double transitTime, boolean solicited)
+    {
+        return new ReadWriteListener.ReadWriteEvent(device, connPriority, status, gattStatus, totalTime, transitTime, solicited);
     }
 
     public static DiscoveryListener.DiscoveryEvent newDiscoveryEvent(BleDevice device, DiscoveryListener.LifeCycle lifeCycle)
